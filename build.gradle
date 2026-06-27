@@ -1,0 +1,94 @@
+plugins {
+    id "java-library"
+    id "net.neoforged.moddev" version "2.0.141"
+}
+
+group = mod_group_id
+version = mod_version
+
+base {
+    archivesName = "openysm-neoforge-${minecraft_version}"
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+neoForge {
+    version = neo_version
+
+    mods {
+        openysm {
+            sourceSet sourceSets.main
+        }
+    }
+
+    runs {
+        client {
+            client()
+            gameDirectory = file("runs/client")
+        }
+        server {
+            server()
+            gameDirectory = file("runs/server")
+        }
+    }
+}
+
+sourceSets {
+    main {
+        resources {
+            srcDir "src/main/generated-resources"
+        }
+    }
+}
+
+dependencies {
+    compileOnly files("src/main/resources/META-INF/jars/ImageStream--SNAPSHOT.jar")
+    compileOnly files("src/main/resources/META-INF/jars/architectury-forge-9.2.14.jar")
+    compileOnly files("src/main/resources/META-INF/jars/mixinextras-forge-0.3.6.jar")
+    compileOnly files("work/reference/neoforge-1.21.1/carryon-neoforge-1.21.1-2.2.4.4.jar")
+    compileOnly files("work/reference/neoforge-1.21.1/immersive_melodies-neoforge-0.6.4+1.21.1.jar")
+    compileOnly files("work/reference/neoforge-1.21.1/ParCool-1.21.1-3.4.3.3-NF.jar")
+    compileOnly files("work/reference/neoforge-1.21.1/accessories-neoforge-1.1.0-beta.53+1.21.1.jar")
+    compileOnly files("work/reference/neoforge-1.21.1/simplehats-neoforge-1.21.1-0.4.0.jar")
+    compileOnly fileTree(dir: "work/reference/OpenYSM/libs", include: ["*.jar"])
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.release = 21
+}
+
+tasks.processResources {
+    inputs.properties([
+            mod_id: mod_id,
+            mod_name: mod_name,
+            mod_version: mod_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version_range: neo_version_range,
+            loader_version_range: loader_version_range
+    ])
+
+    filesMatching("META-INF/neoforge.mods.toml") {
+        expand inputs.properties
+    }
+
+    exclude("META-INF/jars/mixinextras-forge-0.3.6.jar")
+    exclude("META-INF/jars/architectury-forge-9.2.14.jar")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.jar {
+    exclude("dev/architectury/**")
+
+    manifest {
+        attributes([
+                "Implementation-Title": mod_name,
+                "Implementation-Version": mod_version,
+                "MixinConfigs": "openysm.mixins.json,openysm_neoforge.mixins.json"
+        ])
+    }
+}

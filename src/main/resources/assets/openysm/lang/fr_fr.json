@@ -1,0 +1,19 @@
+{
+  "gui.openysm.close": "Fermer",
+  "gui.openysm.pre_page": "Page précédente",
+  "gui.openysm.next_page": "Page suivante",
+  "gui.openysm.all_models": "Tous les modèles",
+  "gui.openysm.download": "Ouvrir l'interface de téléchargement",
+  "gui.openysm.search": "Chercher un modèle...",
+  "gui.openysm.model.texture": "Ouvrir l'interface de prévisualisation",
+  "gui.openysm.model.return": "Retour",
+  "gui.openysm.model.reset": "Réinitialiser la vue",
+  "gui.openysm.model.stop": "Arrêter Animation",
+  "gui.openysm.config.disable_self_model": "Empêche le rendu du modèle du joueur",
+  "gui.openysm.config.disable_other_model": "Empêche le rendu du modèle d'un autre joueur",
+  "gui.openysm.config.print_animation_roulette_msg": "Afficher ou non le message de lecture de la roulette d'animation",
+  "gui.openysm.config.disable_self_hands": "Empêche le rendu des mains du joueur",
+  "gui.openysm.config.disable_player_render": "Désactiver le rendu supplémentaire du joueur",
+  "gui.openysm.disclaimer.read": "J'ai lu et j'accepte les conditions d'utilisation",
+  "gui.openysm.disclaimer.close": "Fermer"
+}

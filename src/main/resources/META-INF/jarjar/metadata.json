@@ -1,0 +1,15 @@
+{
+  "jars": [
+    {
+      "identifier": {
+        "group": "com.github.TartaricAlkaline",
+        "artifact": "ImageStream"
+      },
+      "version": {
+        "range": "[-SNAPSHOT,)",
+        "artifactVersion": "-SNAPSHOT"
+      },
+      "path": "META-INF/jars/ImageStream--SNAPSHOT.jar"
+    }
+  ]
+}

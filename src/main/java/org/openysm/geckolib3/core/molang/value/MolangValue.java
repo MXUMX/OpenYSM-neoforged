@@ -1,0 +1,23 @@
+package org.openysm.geckolib3.core.molang.value;
+
+import org.openysm.molang.parser.ast.Expression;
+import org.openysm.molang.runtime.ExpressionEvaluator;
+
+import java.util.List;
+
+public class MolangValue implements IValue {
+
+    private final List<Expression> expressions;
+
+    private final boolean isScript;
+
+    public MolangValue(List<Expression> list, boolean isScript) {
+        this.expressions = list;
+        this.isScript = isScript;
+    }
+
+    @Override
+    public Object evalUnsafe(ExpressionEvaluator<?> evaluator) {
+        return evaluator.evalAll(this.expressions, this.isScript);
+    }
+}

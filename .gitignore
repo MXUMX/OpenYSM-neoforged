@@ -1,0 +1,43 @@
+# macOS / editor noise
+.DS_Store
+*.swp
+*.swo
+
+# Local agent/workspace instructions
+AGENTS.md
+.agents/
+.codex/
+
+# Gradle / build outputs
+.gradle/
+build/
+out/
+
+# Minecraft dev runtime outputs
+runs/
+
+# Reconstruction inputs and local reference material
+work/
+downloads/
+libs/
+*.jar
+*.zip
+
+# Embedded binary artifacts are local build inputs, not source.
+src/main/resources/META-INF/jars/
+src/main/resources/natives/
+
+# Bundled model/content packs are kept local unless separately licensed.
+src/main/resources/assets/openysm/builtin/
+
+# Compiled/native binaries
+*.class
+*.dll
+*.dylib
+*.jnilib
+*.so
+
+# Logs and crash reports
+*.log
+*.log.gz
+crash-reports/

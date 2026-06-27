@@ -1,0 +1,13 @@
+{
+  "custom": {
+    "category": "neutral",
+    "subtitle": "subtitle.openysm.custom",
+    "sounds": [
+      {
+        "name": "openysm:empty",
+        "preload": false,
+        "stream": true
+      }
+    ]
+  }
+}

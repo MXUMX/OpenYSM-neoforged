@@ -1,0 +1,21 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "org.openysm.mixin",
+  "plugin": "org.openysm.mixin.plugin.MixinTweaker",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "openysm.refmap.json",
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "client": [
+    "client.EntityRenderDispatcherMixin",
+    "client.FishingHookAccessor", "client.LivingEntityAccessor",
+    "client.LivingRendererMixin", "client.PauseScreenMixin", "client.RenderSystemAccessor",
+    "client.ThrowableItemProjectileAccessor",
+    "client.SlashBladeUserPoseOverriderMixin"
+  ],
+  "mixins": [
+    "AbstractArrowEntityMixin", "ProjectileEntityMixin", "ServerPlayerMixin"
+  ]
+}
