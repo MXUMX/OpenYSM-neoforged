@@ -30,12 +30,14 @@ public class YSMFolderDeserializer implements AutoCloseable {
     private final Path rootPath;
     private final FileSystem zipFileSystem;
     private final RawYsmModel model;
+    private final Map<String, byte[]> inMemoryFiles;
 
     public YSMFolderDeserializer(Path sourcePath) throws IOException {
         if (!Files.exists(sourcePath)) {
             throw new FileNotFoundException("Model source not found: " + sourcePath);
         }
 
+        this.inMemoryFiles = null;
         if (Files.isDirectory(sourcePath)) {
             this.rootPath = sourcePath;
             this.zipFileSystem = null;
@@ -51,23 +53,35 @@ public class YSMFolderDeserializer implements AutoCloseable {
         this.model.formatVersion = 65535;
     }
 
+    public YSMFolderDeserializer(Map<String, byte[]> memoryFiles) {
+        this.inMemoryFiles = memoryFiles;
+        this.rootPath = null;
+        this.zipFileSystem = null;
+        this.model = new RawYsmModel();
+        this.model.formatVersion = 65535;
+    }
+
     private byte[] readResource(String relativePath) {
         if (relativePath == null || relativePath.isEmpty()) return null;
         try {
             if (relativePath.startsWith("/")) {
                 relativePath = relativePath.substring(1);
             }
-            Path target = rootPath.resolve(relativePath);
-            if (Files.exists(target) && Files.isRegularFile(target)) {
-                byte[] data = Files.readAllBytes(target);
-
-                String normalizedPath = relativePath.replace('\\', '/');
-                if (!readFilesMd5Map.containsKey(normalizedPath)) {
-                    readFilesMd5Map.put(normalizedPath, DigestUtil.md5Hex(data));
+            String normalizedPath = relativePath.replace('\\', '/');
+            byte[] data = null;
+            if (this.inMemoryFiles != null) {
+                data = this.inMemoryFiles.get(normalizedPath);
+            } else {
+                Path target = rootPath.resolve(relativePath);
+                if (Files.exists(target) && Files.isRegularFile(target)) {
+                    data = Files.readAllBytes(target);
                 }
-
-                return data;
             }
+
+            if (data != null && !readFilesMd5Map.containsKey(normalizedPath)) {
+                readFilesMd5Map.put(normalizedPath, DigestUtil.md5Hex(data));
+            }
+            return data;
         } catch (Exception e) {
             System.err.println("[YSM] Warning: Failed to read resource: " + relativePath);
         }
@@ -76,14 +90,13 @@ public class YSMFolderDeserializer implements AutoCloseable {
 
     public RawYsmModel deserialize() {
         byte[] ysmJsonBytes = readResource("ysm.json");
-        if (ysmJsonBytes == null) {
-            throw new RuntimeException("Missing ysm.json in the provided source");
+        if (ysmJsonBytes != null) {
+            String jsonStr = new String(ysmJsonBytes, StandardCharsets.UTF_8);
+            JsonObject ysmJson = JsonParser.parseString(jsonStr).getAsJsonObject();
+            parseYsmJson(ysmJson);
+        } else {
+            parseLegacyFormat();
         }
-
-        String jsonStr = new String(ysmJsonBytes, StandardCharsets.UTF_8);
-        JsonObject ysmJson = JsonParser.parseString(jsonStr).getAsJsonObject();
-
-        parseYsmJson(ysmJson);
         parseGlobalResources();
 
         this.finalFolderHash = calculateFinalFolderHash();
@@ -97,6 +110,9 @@ public class YSMFolderDeserializer implements AutoCloseable {
     public void close() throws IOException {
         if (this.zipFileSystem != null) {
             this.zipFileSystem.close();
+        }
+        if (this.inMemoryFiles != null) {
+            this.inMemoryFiles.clear();
         }
     }
 
@@ -842,47 +858,51 @@ public class YSMFolderDeserializer implements AutoCloseable {
     }
 
     private void parseGlobalResources() {
+        if (this.inMemoryFiles != null) {
+            for (Map.Entry<String, byte[]> entry : this.inMemoryFiles.entrySet()) {
+                processGlobalResourceFile(entry.getKey(), entry.getValue());
+            }
+            return;
+        }
+
         try (Stream<Path> stream = Files.walk(rootPath)) {
             stream.filter(Files::isRegularFile).forEach(path -> {
                 String relativePath = rootPath.relativize(path).toString().replace('\\', '/');
-
-                if (relativePath.startsWith("sounds/") || relativePath.endsWith(".ogg")) {
-                    String soundName = extractFileName(relativePath);
-                    byte[] data = readResource(relativePath);
-                    if (data != null) {
-                        String hash = DigestUtil.sha256Hex(data);
-                        model.soundFiles.put(soundName, new RawYsmModel.RawDataFile(hash, data));
-                    }
-                }
-                else if (relativePath.startsWith("lang/") && relativePath.endsWith(".json")) {
-                    String locale = relativePath.substring("lang/".length(), relativePath.length() - 5);
-                    byte[] data = readResource(relativePath);
-                    if (data != null) {
-                        try {
-                            String hash = DigestUtil.sha256Hex(data);
-                            String langJsonStr = new String(data, StandardCharsets.UTF_8);
-                            JsonObject langJson = JsonParser.parseString(langJsonStr).getAsJsonObject();
-                            Map<String, String> langMap = new LinkedHashMap<>();
-                            for (Map.Entry<String, JsonElement> langEntry : langJson.entrySet()) {
-                                if (langEntry.getValue().isJsonPrimitive()) {
-                                    langMap.put(langEntry.getKey(), langEntry.getValue().getAsString());
-                                }
-                            }
-                            model.languageFiles.put(locale, new RawYsmModel.RawLanguageFile(hash, langMap));
-                        } catch (Exception ignored) {}
-                    }
-                }
-                else if (relativePath.startsWith("functions/") && relativePath.endsWith(".molang")) {
-                    String fnName = extractFileName(relativePath);
-                    byte[] data = readResource(relativePath);
-                    if (data != null) {
-                        String hash = DigestUtil.sha256Hex(data);
-                        model.functionFiles.put(fnName, new RawYsmModel.RawDataFile(hash, data));
-                    }
+                byte[] data = readResource(relativePath);
+                if (data != null) {
+                    processGlobalResourceFile(relativePath, data);
                 }
             });
         } catch (IOException e) {
             System.err.println("[YSM] Warning: Failed to scan global resources. " + e.getMessage());
+        }
+    }
+
+    private void processGlobalResourceFile(String relativePath, byte[] data) {
+        if (relativePath.startsWith("sounds/") || relativePath.endsWith(".ogg")) {
+            String soundName = extractFileName(relativePath);
+            String hash = DigestUtil.sha256Hex(data);
+            model.soundFiles.put(soundName, new RawYsmModel.RawDataFile(hash, data));
+        }
+        else if (relativePath.startsWith("lang/") && relativePath.endsWith(".json")) {
+            String locale = relativePath.substring("lang/".length(), relativePath.length() - 5);
+            try {
+                String hash = DigestUtil.sha256Hex(data);
+                String langJsonStr = new String(data, StandardCharsets.UTF_8);
+                JsonObject langJson = JsonParser.parseString(langJsonStr).getAsJsonObject();
+                Map<String, String> langMap = new LinkedHashMap<>();
+                for (Map.Entry<String, JsonElement> langEntry : langJson.entrySet()) {
+                    if (langEntry.getValue().isJsonPrimitive()) {
+                        langMap.put(langEntry.getKey(), langEntry.getValue().getAsString());
+                    }
+                }
+                model.languageFiles.put(locale, new RawYsmModel.RawLanguageFile(hash, langMap));
+            } catch (Exception ignored) {}
+        }
+        else if (relativePath.startsWith("functions/") && relativePath.endsWith(".molang")) {
+            String fnName = extractFileName(relativePath);
+            String hash = DigestUtil.sha256Hex(data);
+            model.functionFiles.put(fnName, new RawYsmModel.RawDataFile(hash, data));
         }
     }
 
@@ -1025,5 +1045,183 @@ public class YSMFolderDeserializer implements AutoCloseable {
 
     public String getFolderHash() {
         return finalFolderHash;
+    }
+
+    private void parseLegacyFormat() {
+        byte[] mainData = readResource("main.json");
+        byte[] armData = readResource("arm.json");
+        if (mainData == null) {
+            throw new RuntimeException("Legacy model missing main.json");
+        }
+        if (armData == null) {
+            throw new RuntimeException("Legacy model missing arm.json");
+        }
+
+        List<String> pngFiles = new ArrayList<>();
+        if (this.inMemoryFiles != null) {
+            for (String name : this.inMemoryFiles.keySet()) {
+                if (name.endsWith(".png") && !name.contains("/")) {
+                    pngFiles.add(name);
+                }
+            }
+        } else {
+            try (Stream<Path> stream = Files.list(this.rootPath)) {
+                stream.filter(Files::isRegularFile).forEach(path -> {
+                    String fileName = path.getFileName().toString();
+                    if (fileName.endsWith(".png")) {
+                        pngFiles.add(fileName);
+                    }
+                });
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        boolean hasMainTexture = false;
+        for (String fileName : pngFiles) {
+            if (!"arrow.png".equals(fileName)) {
+                hasMainTexture = true;
+                break;
+            }
+        }
+        if (!hasMainTexture) {
+            throw new RuntimeException("Legacy model requires at least one texture.");
+        }
+
+        byte[] arrowModelData = readResource("arrow.json");
+        if (arrowModelData != null && !pngFiles.contains("arrow.png")) {
+            throw new RuntimeException("arrow.json is present but arrow.png is missing.");
+        }
+
+        byte[] infoData = readResource("info.json");
+        if (infoData != null) {
+            try {
+                JsonObject infoObj = JsonParser.parseString(new String(infoData, StandardCharsets.UTF_8)).getAsJsonObject();
+                parseLegacyMetadata(infoObj, true);
+            } catch (Exception e) {
+                System.err.println("Failed to parse info.json");
+                e.printStackTrace();
+            }
+        }
+
+        model.mainEntity.mainModel = parseGeometry(mainData, 1);
+        model.mainEntity.armModel = parseGeometry(armData, 2);
+
+        for (String fileName : pngFiles) {
+            if ("arrow.png".equals(fileName)) {
+                continue;
+            }
+            byte[] texData = readResource(fileName);
+            if (texData == null) {
+                continue;
+            }
+            ImageMeta meta = parseImageMeta(texData, fileName);
+            RawYsmModel.RawTexture rt = new RawYsmModel.RawTexture();
+            rt.hash = DigestUtil.sha256Hex(texData);
+            rt.width = meta.width();
+            rt.height = meta.height();
+            rt.imageFormat = meta.format();
+            rt.name = extractFileName(fileName);
+            rt.data = texData;
+            rt.unknownFlag = 1;
+            model.mainEntity.textures.put(rt.name, rt);
+        }
+
+        if (!model.mainEntity.textures.isEmpty()) {
+            model.properties.defaultTexture = model.mainEntity.textures.keySet().iterator().next();
+        }
+
+        String[] animFiles = new String[]{
+                "main.animation.json",
+                "arm.animation.json",
+                "extra.animation.json",
+                "tac.animation.json",
+                "carryon.animation.json",
+                "slashblade.animation.json",
+                "tlm.animation.json"
+        };
+        for (String fileName : animFiles) {
+            byte[] animData = readResource(fileName);
+            if (animData == null) {
+                continue;
+            }
+            RawYsmModel.RawAnimationFile raf = parseAnimations(animData);
+            raf.fileHash = DigestUtil.sha256Hex(animData);
+            String animKey = fileName.substring(0, fileName.length() - ".animation.json".length());
+            raf.animType = getAnimTypeFromKey(animKey);
+            model.mainEntity.animationFiles.put(animKey, raf);
+        }
+
+        if (arrowModelData != null) {
+            RawYsmModel.RawSubEntity arrow = new RawYsmModel.RawSubEntity();
+            arrow.identifier = "arrow";
+            arrow.model = parseGeometry(arrowModelData, 3);
+
+            byte[] arrowTexData = readResource("arrow.png");
+            if (arrowTexData != null) {
+                ImageMeta meta = parseImageMeta(arrowTexData, "arrow.png");
+                RawYsmModel.RawTexture rt = new RawYsmModel.RawTexture();
+                rt.hash = DigestUtil.sha256Hex(arrowTexData);
+                rt.width = meta.width();
+                rt.height = meta.height();
+                rt.imageFormat = meta.format();
+                rt.name = "arrow";
+                rt.data = arrowTexData;
+                rt.unknownFlag = 1;
+                arrow.textures.put(rt.name, rt);
+            }
+
+            byte[] arrowAnimData = readResource("arrow.animation.json");
+            if (arrowAnimData != null) {
+                RawYsmModel.RawAnimationFile raf = parseAnimations(arrowAnimData);
+                raf.fileHash = DigestUtil.sha256Hex(arrowAnimData);
+                raf.animType = getAnimTypeFromKey("arrow");
+                arrow.animationFiles.put("sub_anim", raf);
+            }
+            model.projectiles.put("arrow", arrow);
+        }
+    }
+
+    public static boolean isModelFolder(Path dir) {
+        if (dir == null || !Files.isDirectory(dir)) {
+            return false;
+        }
+        if (Files.isRegularFile(dir.resolve("ysm.json"))) {
+            return true;
+        }
+        return Files.isRegularFile(dir.resolve("main.json")) && Files.isRegularFile(dir.resolve("arm.json"));
+    }
+
+    private void parseLegacyMetadata(JsonObject infoObj, boolean overwrite) {
+        if (infoObj == null) {
+            return;
+        }
+        if (infoObj.has("name") && (overwrite || model.metadata.name.isEmpty())) {
+            model.metadata.name = getStr(infoObj, "name", "");
+        }
+        if (infoObj.has("tips") && (overwrite || model.metadata.tips.isEmpty())) {
+            model.metadata.tips = getStr(infoObj, "tips", "");
+        }
+        if (infoObj.has("license") && (overwrite || model.metadata.licenseDescription.isEmpty())) {
+            model.metadata.licenseDescription = getStr(infoObj, "license", "");
+        }
+        if (infoObj.has("free") && (overwrite || !model.properties.isFree)) {
+            model.properties.isFree = getBool(infoObj, "free", false);
+        }
+        if (infoObj.has("authors") && infoObj.get("authors").isJsonArray() && (overwrite || model.metadata.authors.isEmpty())) {
+            model.metadata.authors.clear();
+            for (JsonElement element : infoObj.getAsJsonArray("authors")) {
+                RawYsmModel.RawMetadata.Author author = new RawYsmModel.RawMetadata.Author();
+                author.name = element.getAsString();
+                model.metadata.authors.add(author);
+            }
+        }
+        if (infoObj.has("extra_animation_names") && infoObj.get("extra_animation_names").isJsonArray() && (overwrite || model.properties.extraAnimations.isEmpty())) {
+            model.properties.extraAnimations.clear();
+            JsonArray extras = infoObj.getAsJsonArray("extra_animation_names");
+            for (int i = 0; i < extras.size(); i++) {
+                model.properties.extraAnimations.put("extra" + i, extras.get(i).getAsString());
+            }
+        }
     }
 }

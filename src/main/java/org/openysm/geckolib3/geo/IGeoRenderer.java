@@ -31,7 +31,7 @@ public interface IGeoRenderer<T extends AnimatableEntity<?>> {
             vertexConsumer = bufferSource.getBuffer(renderType);
         }
         animatable.resetAnimationState();
-        NativeModelRenderer.renderMesh(vertexConsumer, poseStack.last(), model.getGeoModel(), model.getMatrixData(), model.getAbsPivotData(), i, 0, i2, i3, f2, f3, f4, f5);
+        NativeModelRenderer.renderMesh(vertexConsumer, poseStack.last(), model.getGeoModel(), model.getMatrixData(), model.getAbsPivotData(), i, 0, i2, i3, f2, f3, f4, f5, animatable.getTextureLocation());
         setCurrentModelRenderCycle(EModelRenderCycle.REPEATED);
     }
 

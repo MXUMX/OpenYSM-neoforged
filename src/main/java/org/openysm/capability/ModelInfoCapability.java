@@ -142,7 +142,7 @@ public class ModelInfoCapability {
             }
             return new Object2FloatOpenHashMap(feedbackData.stringValues());
         });
-        this.animSync.syncMolangVars(serverPlayer, !this.dirty, feedbackData.entityId(), feedbackData.stringValues());
+        this.animSync.syncMolangVars(serverPlayer, true, feedbackData.entityId(), feedbackData.stringValues());
     }
 
     public void retainAnimationKeys(IntSet intSet) {

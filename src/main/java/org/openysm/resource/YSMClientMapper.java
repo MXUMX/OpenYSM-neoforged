@@ -47,7 +47,6 @@ import org.gagravarr.vorbis.VorbisFile;
 import org.joml.Vector2f;
 import org.joml.Vector3f;
 import rip.ysm.imagestream.avif.AvifDecoder;
-import rip.ysm.imagestream.jpeg.JpegDecoder;
 import rip.ysm.imagestream.webp.WebpDecoder;
 
 import javax.imageio.ImageIO;
@@ -61,10 +60,8 @@ import java.util.stream.IntStream;
 
 public class YSMClientMapper {
 
-    private static byte[] toPng(byte[] data, int imageFormat, int width, int height) {
-        if (data == null || data.length == 0 || imageFormat == 2) {
-            return data;
-        }
+    private static BufferedImage decodeToImage(byte[] data, int imageFormat, int width, int height) {
+        if (data == null || data.length == 0) return null;
 
         if (imageFormat == 0) {
             imageFormat = YSMFolderDeserializer.detectFormat(data);
@@ -90,42 +87,91 @@ public class YSMClientMapper {
                 } else throw new RuntimeException("Invalid RGBA texture");
             } else {
                 switch (imageFormat) {
-                    case 1 -> img = ImageIO.read(new ByteArrayInputStream(data));
-                    case 3 -> img = new JpegDecoder().read(data);
+                    case 1, 2, 3 -> img = ImageIO.read(new ByteArrayInputStream(data));
                     case 4 -> img = new WebpDecoder().read(data);
                     case 5 -> img = new AvifDecoder().read(data);
                 }
             }
 
-            if (img != null) {
-                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                ImageIO.write(img, "png", baos);
-                return baos.toByteArray();
-            }
+            return img;
         } catch (Exception e) {
             e.printStackTrace();
         }
 
-        return data;
+        return null;
+    }
+
+    private static byte[] encodeToPng(BufferedImage img, byte[] fallbackData) {
+        if (img != null) {
+            try {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                ImageIO.write(img, "png", baos);
+                return baos.toByteArray();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+        return fallbackData;
+    }
+
+    private static byte[] toPng(byte[] data, int imageFormat, int width, int height) {
+        if (imageFormat == 2) {
+            return data;
+        }
+
+        BufferedImage img = decodeToImage(data, imageFormat, width, height);
+        return encodeToPng(img, data);
+    }
+
+    private static TextureDecodeResult decodeTexture(RawYsmModel.RawTexture rt) {
+        BufferedImage img = decodeToImage(rt.data, rt.imageFormat, rt.width, rt.height);
+        byte[] processedData = rt.imageFormat == 2 ? rt.data : encodeToPng(img, rt.data);
+        return new TextureDecodeResult(img, processedData);
+    }
+
+    private static TextureDecodeResult decodeTexture(RawYsmModel.RawTexture.SubTexture rt) {
+        BufferedImage img = decodeToImage(rt.data, rt.imageFormat, rt.width, rt.height);
+        byte[] processedData = rt.imageFormat == 2 ? rt.data : encodeToPng(img, rt.data);
+        return new TextureDecodeResult(img, processedData);
+    }
+
+    private record TextureDecodeResult(BufferedImage image, byte[] data) {
+    }
+
+    private static OuterFileTexture buildTexture(RawYsmModel.RawTexture rt, List<BufferedImage> images) {
+        TextureDecodeResult decoded = decodeTexture(rt);
+        if (images != null) {
+            images.add(decoded.image());
+        }
+        OuterFileTexture tex = new OuterFileTexture(decoded.data());
+        Map<ShadersTextureType, OuterFileTexture> suffixTextures = new LinkedHashMap<>();
+        for (RawYsmModel.RawTexture.SubTexture sub : rt.subTextures) {
+            if (sub.data == null) continue;
+            TextureDecodeResult decodedSub = decodeTexture(sub);
+            if (sub.specularType == 1) {
+                suffixTextures.put(ShadersTextureType.NORMAL, new OuterFileTexture(decodedSub.data()));
+            } else if (sub.specularType == 2) {
+                suffixTextures.put(ShadersTextureType.SPECULAR, new OuterFileTexture(decodedSub.data()));
+            }
+        }
+        tex.setSuffixTextures(suffixTextures);
+        return tex;
+    }
+
+    private static BufferedImage[] decodeTextureImages(Collection<RawYsmModel.RawTexture> textures) {
+        List<BufferedImage> images = new ArrayList<>();
+        for (RawYsmModel.RawTexture rt : textures) {
+            images.add(decodeToImage(rt.data, rt.imageFormat, rt.width, rt.height));
+        }
+        return images.toArray(new BufferedImage[0]);
     }
 
     public static ClientModelInfo buildParsedBundle(RawYsmModel raw, String modelId) {
         Map<String, OuterFileTexture> mainTextures = new LinkedHashMap<>();
+        List<BufferedImage> mainTextureImages = new ArrayList<>();
         for (RawYsmModel.RawTexture rt : raw.mainEntity.textures.values()) {
-            byte[] processedData = toPng(rt.data, rt.imageFormat,rt.width,rt.height);
-            OuterFileTexture tex = new OuterFileTexture(processedData);
-            Map<ShadersTextureType, OuterFileTexture> suffixTextures = new LinkedHashMap<>();
-            for (RawYsmModel.RawTexture.SubTexture sub : rt.subTextures) {
-                if (sub.data == null) continue;
-                byte[] processedSubData = toPng(sub.data, sub.imageFormat,sub.width,sub.height);
-                if (sub.specularType == 1) {
-                    suffixTextures.put(ShadersTextureType.NORMAL, new OuterFileTexture(processedSubData));
-                } else if (sub.specularType == 2) {
-                    suffixTextures.put(ShadersTextureType.SPECULAR, new OuterFileTexture(processedSubData));
-                }
-            }
-            tex.setSuffixTextures(suffixTextures);
-            mainTextures.put(rt.name, tex);
+            mainTextures.put(rt.name, buildTexture(rt, mainTextureImages));
         }
         Map<String, OuterFileTexture> avatarTextures = new LinkedHashMap<>();
         for (RawYsmModel.RawMetadata.Author author : raw.metadata.authors) {
@@ -138,8 +184,11 @@ public class YSMClientMapper {
 
         GeometryDescription context = buildContext(raw.mainEntity.mainModel);
         int textureCount = Math.max(1, raw.mainEntity.textures.size());
-        GeoModel mainMesh = buildMesh(raw.mainEntity.mainModel, context, textureCount);
-        GeoModel armMesh = raw.mainEntity.armModel != null ? buildMesh(raw.mainEntity.armModel, context, textureCount) : mainMesh;
+        BufferedImage[] textureImages = mainTextureImages.toArray(new BufferedImage[0]);
+        TranslucencyScanner mainScanner = raw.mainEntity.mainModel != null ? new TranslucencyScanner(textureImages, textureCount) : null;
+        TranslucencyScanner armScanner = raw.mainEntity.armModel != null ? new TranslucencyScanner(textureImages, textureCount) : null;
+        GeoModel mainMesh = buildMesh(raw.mainEntity.mainModel, context, textureCount, mainScanner, raw.properties.allCutout);
+        GeoModel armMesh = raw.mainEntity.armModel != null ? buildMesh(raw.mainEntity.armModel, context, textureCount, armScanner, raw.properties.allCutout) : mainMesh;
         GeoModel[] meshes = new GeoModel[]{mainMesh, armMesh};
 
         Map<String, AnimationFile> animations = new LinkedHashMap<>();
@@ -163,9 +212,10 @@ public class YSMClientMapper {
         return new ClientModelInfo(mainModelData, extraItemModels, extraEntityModels, extraResources, modelInfo, avatarTextures, extraTextures);
     }
 
-    private static GeoModel buildMesh(RawYsmModel.RawGeometry rawGeo, GeometryDescription context, int textureCount) {
+    private static GeoModel buildMesh(RawYsmModel.RawGeometry rawGeo, GeometryDescription context, int textureCount, TranslucencyScanner scanner, boolean allCutout) {
         if (rawGeo == null || rawGeo.bones.isEmpty()) {
-            return buildMesh(new GeoBone[0], new HashMap<>(), context, textureCount);
+            boolean[] translucencyArray = scanner != null ? scanner.results : new boolean[Math.max(1, textureCount)];
+            return buildMesh(new GeoBone[0], new HashMap<>(), context, translucencyArray);
         }
 
         List<GeoBone> geoBones = new ArrayList<>();
@@ -187,51 +237,19 @@ public class YSMClientMapper {
             bb.rotZ = rb.rotation[2];
             bb.parentIdx = -1;
 
-            // TODO: 优化算法
             for (RawYsmModel.RawCube rc : rb.cubes) {
                 GeoModel.BakedCube bc = new GeoModel.BakedCube();
-                boolean isNegativeVolume = false;
+                boolean forceCull = allCutout;
+                boolean hasTranslucentFace = false;
+                int validFaceCount = 0;
 
                 for (RawYsmModel.RawFace rf : rc.faces) {
-                    Vector3f v0 = new Vector3f(rf.positions[0][0], rf.positions[0][1], rf.positions[0][2]);
-                    Vector3f v1 = new Vector3f(rf.positions[1][0], rf.positions[1][1], rf.positions[1][2]);
-                    Vector3f v2 = new Vector3f(rf.positions[2][0], rf.positions[2][1], rf.positions[2][2]);
-                    Vector3f normal = new Vector3f(rf.normal[0], rf.normal[1], rf.normal[2]);
-                    Vector3f e1 = new Vector3f(v1).sub(v0);
-                    Vector3f e2 = new Vector3f(v2).sub(v1);
-                    Vector3f cross = new Vector3f(e1).cross(e2);
-                    if (cross.dot(normal) < -1e-5f) {
-                        isNegativeVolume = true;
-                        break;
+                    int faceState = scanner != null ? scanner.scan(rf) : 1;
+                    if (faceState == 0) continue;
+                    if (faceState == 2) hasTranslucentFace = true;
+                    if (!forceCull && isNegativeSizedFace(rf)) {
+                        forceCull = true;
                     }
-                }
-
-                if (!isNegativeVolume) {
-                    for (int i = 0; i < rc.faces.size(); i++) {
-                        RawYsmModel.RawFace faceA = rc.faces.get(i);
-                        Vector3f normA = new Vector3f(faceA.normal[0], faceA.normal[1], faceA.normal[2]);
-
-                        for (int j = i + 1; j < rc.faces.size(); j++) {
-                            RawYsmModel.RawFace faceB = rc.faces.get(j);
-                            Vector3f normB = new Vector3f(faceB.normal[0], faceB.normal[1], faceB.normal[2]);
-                            if (normA.dot(normB) < -0.99f) {
-                                Vector3f centerA = getFaceCenter(faceA);
-                                Vector3f centerB = getFaceCenter(faceB);
-                                Vector3f diff = new Vector3f(centerA).sub(centerB);
-                                if (diff.dot(normA) < -1e-5f) {
-                                    isNegativeVolume = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (isNegativeVolume) break;
-                    }
-                }
-                // TODO: END
-
-                bc.cullable = !(bb.glow && !isNegativeVolume);
-
-                for (RawYsmModel.RawFace rf : rc.faces) {
                     GeoModel.BakedQuad bq = new GeoModel.BakedQuad();
                     bq.normal = new Vector3f(rf.normal[0], rf.normal[1], rf.normal[2]);
                     bq.positions = new Vector3f[4];
@@ -241,8 +259,40 @@ public class YSMClientMapper {
                         bq.uvs[i] = new Vector2f(rf.u[i], rf.v[i]);
                     }
                     bc.quads.add(bq);
+                    validFaceCount++;
                 }
-                bb.cubes.add(bc);
+
+                boolean isZeroThickness = true;
+                if (!bc.quads.isEmpty()) {
+                    GeoModel.BakedQuad firstQuad = bc.quads.get(0);
+                    Vector3f firstNormal = firstQuad.normal;
+                    Vector3f firstPos = firstQuad.positions[0];
+                    float firstDist = firstNormal.x() * firstPos.x() + firstNormal.y() * firstPos.y() + firstNormal.z() * firstPos.z();
+                    for (GeoModel.BakedQuad quad : bc.quads) {
+                        float dot = Math.abs(quad.normal.dot(firstNormal));
+                        if (dot < 0.999f) {
+                            isZeroThickness = false;
+                            break;
+                        }
+                        Vector3f pos = quad.positions[0];
+                        float dist = firstNormal.x() * pos.x() + firstNormal.y() * pos.y() + firstNormal.z() * pos.z();
+                        if (Math.abs(dist - firstDist) > 1.0E-4f) {
+                            isZeroThickness = false;
+                            break;
+                        }
+                    }
+                } else {
+                    isZeroThickness = false;
+                }
+
+                if (forceCull) bc.cullable = true;
+                else if (hasTranslucentFace) bc.cullable = false;
+                else if (isZeroThickness && validFaceCount > 1) bc.cullable = true;
+                else bc.cullable = validFaceCount >= 5;
+
+                if (!bc.quads.isEmpty()) {
+                    bb.cubes.add(bc);
+                }
             }
             bakedBones.add(bb);
         }
@@ -265,7 +315,8 @@ public class YSMClientMapper {
             else b.partMask = 0;
         }
 
-        GeoModel mesh = buildMesh(geoBones.toArray(new GeoBone[0]), parentMap, context, textureCount);
+        boolean[] translucencyArray = scanner != null ? scanner.results : new boolean[Math.max(1, textureCount)];
+        GeoModel mesh = buildMesh(geoBones.toArray(new GeoBone[0]), parentMap, context, translucencyArray);
         mesh.bakedBones = bakedBones;
         if (NativeLibLoader.isLoaded()) mesh.buildNativeCache();
         return mesh;
@@ -568,7 +619,9 @@ public class YSMClientMapper {
     }
 
     private static ProjectileModelFiles buildSubEntityHolder(RawYsmModel.RawSubEntity sub, GeometryDescription context, int textureCount, boolean mergeMultilineExpr) {
-        GeoModel mesh = buildMesh(sub.model, context, textureCount);
+        BufferedImage[] images = decodeTextureImages(sub.textures.values());
+        int actualTextureCount = Math.max(textureCount, Math.max(1, sub.textures.size()));
+        GeoModel mesh = buildMesh(sub.model, context, actualTextureCount, new TranslucencyScanner(images, actualTextureCount), true);
 
         Map<String, Animation> allAnimations = new LinkedHashMap<>();
         for (Map.Entry<String, RawYsmModel.RawAnimationFile> entry : sub.animationFiles.entrySet()) {
@@ -582,8 +635,7 @@ public class YSMClientMapper {
         OuterFileTexture texture = null;
         if (!sub.textures.isEmpty()) {
             RawYsmModel.RawTexture rt = sub.textures.values().iterator().next();
-            byte[] processedData = toPng(rt.data, rt.imageFormat,rt.width,rt.height);
-            texture = new OuterFileTexture(processedData);
+            texture = buildTexture(rt, null);
         }
 
         String[] matchIds = sub.matchIds != null ? sub.matchIds : new String[]{sub.identifier};
@@ -591,7 +643,9 @@ public class YSMClientMapper {
     }
 
     private static VehicleModelFiles buildSubEntityWrapper(RawYsmModel.RawSubEntity sub, GeometryDescription context, int textureCount, boolean mergeMultilineExpr) {
-        GeoModel mesh = buildMesh(sub.model, context, textureCount);
+        BufferedImage[] images = decodeTextureImages(sub.textures.values());
+        int actualTextureCount = Math.max(textureCount, Math.max(1, sub.textures.size()));
+        GeoModel mesh = buildMesh(sub.model, context, actualTextureCount, new TranslucencyScanner(images, actualTextureCount), true);
 
         Map<String, Animation> allAnimations = new LinkedHashMap<>();
         for (RawYsmModel.RawAnimationFile animFile : sub.animationFiles.values()) {
@@ -605,8 +659,7 @@ public class YSMClientMapper {
         OuterFileTexture texture = null;
         if (!sub.textures.isEmpty()) {
             RawYsmModel.RawTexture rt = sub.textures.values().iterator().next();
-            byte[] processedData = toPng(rt.data, rt.imageFormat,rt.width,rt.height);
-            texture = new OuterFileTexture(processedData);
+            texture = buildTexture(rt, null);
         }
 
         String[] matchIds = sub.matchIds != null ? sub.matchIds : new String[]{sub.identifier};
@@ -726,9 +779,12 @@ public class YSMClientMapper {
     }
 
     public static GeoModel buildMesh(GeoBone[] bones, Map<String, String> parentMap, GeometryDescription context, int textureCount) {
+        return buildMesh(bones, parentMap, context, new boolean[Math.max(1, textureCount)]);
+    }
+
+    public static GeoModel buildMesh(GeoBone[] bones, Map<String, String> parentMap, GeometryDescription context, boolean[] translucencyArray) {
         String[][] boneNameArrays = buildBoneNameArrays(parentMap);
         boolean[] flags = new boolean[]{parentMap.containsKey("LeftArm"), parentMap.containsKey("RightArm"), parentMap.containsKey("Background")};
-        boolean[] translucencyArray = new boolean[Math.max(1, textureCount)];
         return new GeoModel(bones, boneNameArrays, flags, context, translucencyArray);
     }
 
@@ -754,11 +810,106 @@ public class YSMClientMapper {
         );
     }
 
-    private static Vector3f getFaceCenter(RawYsmModel.RawFace face) {
-        Vector3f center = new Vector3f(0, 0, 0);
-        for (int i = 0; i < 4; i++) {
-            center.add(face.positions[i][0], face.positions[i][1], face.positions[i][2]);
+    private static boolean isNegativeSizedFace(RawYsmModel.RawFace face) {
+        float[] p0 = face.positions[0];
+        float[] p1 = face.positions[1];
+        float[] p2 = face.positions[2];
+
+        Vector3f edgeA = new Vector3f(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+        Vector3f edgeB = new Vector3f(p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]);
+        Vector3f cross = edgeA.cross(edgeB, new Vector3f());
+        if (cross.lengthSquared() <= 1.0E-10f) {
+            float[] p3 = face.positions[3];
+            edgeB.set(p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2]);
+            cross = edgeA.cross(edgeB, cross);
+            if (cross.lengthSquared() <= 1.0E-10f) {
+                return false;
+            }
         }
-        return center.div(4.0f);
+
+        return cross.dot(face.normal[0], face.normal[1], face.normal[2]) < -1.0E-5f;
+    }
+
+    private static final class TranslucencyScanner {
+        private final BufferedImage[] images;
+        private final boolean[] results;
+
+        private TranslucencyScanner(BufferedImage[] images, int textureCount) {
+            this.images = images;
+            this.results = new boolean[Math.max(1, textureCount)];
+        }
+
+        private int scan(RawYsmModel.RawFace face) {
+            if (images.length == 0) {
+                return 1;
+            }
+
+            float minU = Float.MAX_VALUE;
+            float minV = Float.MAX_VALUE;
+            float maxU = -Float.MAX_VALUE;
+            float maxV = -Float.MAX_VALUE;
+            for (int i = 0; i < 4; i++) {
+                minU = Math.min(minU, face.u[i]);
+                minV = Math.min(minV, face.v[i]);
+                maxU = Math.max(maxU, face.u[i]);
+                maxV = Math.max(maxV, face.v[i]);
+            }
+
+            boolean foundImage = false;
+            boolean faceHasVisiblePixel = false;
+            boolean faceHasTransparentPixel = false;
+
+            for (int i = 0; i < images.length; i++) {
+                BufferedImage image = images[i];
+                if (image == null) continue;
+                foundImage = true;
+
+                int width = image.getWidth();
+                int height = image.getHeight();
+                int startX = (int) Math.floor(minU * width + 0.01f);
+                int endX = (int) Math.floor(maxU * width - 0.01f);
+                int startY = (int) Math.floor(minV * height + 0.01f);
+                int endY = (int) Math.floor(maxV * height - 0.01f);
+
+                if (endX < startX) endX = startX;
+                if (endY < startY) endY = startY;
+                startX = Math.max(0, Math.min(width - 1, startX));
+                endX = Math.max(0, Math.min(width - 1, endX));
+                startY = Math.max(0, Math.min(height - 1, startY));
+                endY = Math.max(0, Math.min(height - 1, endY));
+
+                boolean imageHasVisiblePixel = false;
+                boolean imageHasTransparentPixel = false;
+                boolean imageHasColoredTranslucentPixel = false;
+                for (int y = startY; y <= endY; y++) {
+                    for (int x = startX; x <= endX; x++) {
+                        int alpha = image.getRGB(x, y) >>> 24 & 0xFF;
+                        if (alpha > 0) {
+                            imageHasVisiblePixel = true;
+                        }
+                        if (alpha < 255) {
+                            imageHasTransparentPixel = true;
+                        }
+                        if (alpha > 0 && alpha < 255) {
+                            imageHasColoredTranslucentPixel = true;
+                        }
+                    }
+                }
+
+                if (imageHasVisiblePixel) {
+                    faceHasVisiblePixel = true;
+                }
+                if (imageHasTransparentPixel) {
+                    faceHasTransparentPixel = true;
+                }
+                if (imageHasColoredTranslucentPixel && i < results.length) {
+                    results[i] = true;
+                }
+            }
+
+            if (!foundImage) return 1;
+            if (!faceHasVisiblePixel) return 0;
+            return faceHasTransparentPixel ? 2 : 1;
+        }
     }
 }

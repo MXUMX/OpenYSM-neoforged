@@ -39,6 +39,7 @@ import net.minecraftforge.network.NetworkDirection;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.Nullable;
+import rip.ysm.legacy.YesModelUtils;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -69,6 +70,10 @@ public final class ServerModelManager {
     public static final Path CUSTOM = FOLDER.resolve("custom");
     public static final Path AUTH = FOLDER.resolve("auth");
     public static final Path EXPORT = FOLDER.resolve("export");
+
+    private static final Path LEGACY_FOLDER = Paths.get("config", "yes_steve_model");
+    private static final Path LEGACY_CUSTOM = LEGACY_FOLDER.resolve("custom");
+    private static final Path LEGACY_AUTH = LEGACY_FOLDER.resolve("auth");
 
     /**
      * 生成缓存文件的文件夹
@@ -413,11 +418,15 @@ public final class ServerModelManager {
 
             packs.clear();
             scanDirectoryPacks(BUILT);
+            scanDirectoryPacks(LEGACY_CUSTOM);
             scanDirectoryPacks(CUSTOM);
+            scanDirectoryPacks(LEGACY_AUTH);
             scanDirectoryPacks(AUTH);
 
             scanDirectoryModels(BUILT, CACHE_SERVER, loadedModels, authIds, validCacheFiles, false);
+            scanDirectoryModels(LEGACY_CUSTOM, CACHE_SERVER, loadedModels, authIds, validCacheFiles, false);
             scanDirectoryModels(CUSTOM, CACHE_SERVER, loadedModels, authIds, validCacheFiles, false);
+            scanDirectoryModels(LEGACY_AUTH, CACHE_SERVER, loadedModels, authIds, validCacheFiles, true);
             scanDirectoryModels(AUTH, CACHE_SERVER, loadedModels, authIds, validCacheFiles, true);
             try (Stream<Path> stream = Files.list(CACHE_SERVER)) {
                 stream.forEach(file -> {
@@ -444,7 +453,7 @@ public final class ServerModelManager {
             stream.forEach(path -> {
                 String fileName = path.getFileName().toString();
                 try {
-                    if (fileName.equals("ysm.json")) {
+                    if (fileName.equals("ysm.json") || (fileName.equals("main.json") && Files.isRegularFile(path.getParent().resolve("arm.json")) && !Files.isRegularFile(path.getParent().resolve("ysm.json")))) {
                         Path modelDir = path.getParent();
                         // 提取相對路徑作為ID
                         String modelId = baseDir.relativize(modelDir).toString().replace('\\', '/');
@@ -462,10 +471,23 @@ public final class ServerModelManager {
                         String relativePath = baseDir.relativize(path).toString().replace('\\', '/');
                         String modelId = /*relativePath.substring(0, relativePath.length() - 4)*/relativePath;
                         byte[] raw = Files.readAllBytes(path);
-                        byte[] decrypted = YsmCrypt.decryptYsmFile(raw);
-                        try (YSMBinaryDeserializer deserializer = new YSMBinaryDeserializer(decrypted)) {
-                            RawYsmModel rawModel = deserializer.deserializeKeepOpen();
-                            deserializer.parseYSMFooter(rawModel); //只用于gui展示数据
+                        RawYsmModel rawModel;
+                        int ysmCryptoVersion = YesModelUtils.getYsmCryptoVersion(raw);
+                        if (ysmCryptoVersion == 1 || ysmCryptoVersion == 2) {
+                            Map<String, byte[]> input = YesModelUtils.input(raw);
+                            try (YSMFolderDeserializer deserializer = new YSMFolderDeserializer(input)) {
+                                rawModel = deserializer.deserialize();
+                            }
+                        } else if (ysmCryptoVersion == 3) {
+                            byte[] decrypted = YsmCrypt.decryptYsmFile(raw);
+                            try (YSMBinaryDeserializer deserializer = new YSMBinaryDeserializer(decrypted)) {
+                                rawModel = deserializer.deserializeKeepOpen();
+                                deserializer.parseYSMFooter(rawModel); //只用于gui展示数据
+                            }
+                        } else {
+                            throw new IllegalStateException("Unknown YSM crypto version for file: " + path);
+                        }
+                        {
                             ServerModelData data = processAndCacheModel(modelId, rawModel, cacheDir, isAuth, validCaches);
                             if (data != null) {
                                 loaded.put(modelId, data);

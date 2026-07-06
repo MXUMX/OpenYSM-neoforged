@@ -15,6 +15,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.*;
@@ -25,6 +27,23 @@ public final class YesModelUtils {
     public static final int VERSION = 0x00_00_00_01;
     public static final int VERSION_II = 0x00_00_00_02;
     private static final String ENCRYPTION_METHOD = "AES";
+
+    public static int getYsmCryptoVersion(byte[] fileData) {
+        if (fileData == null || fileData.length < 8) {
+            return -1;
+        }
+        if (fileData[0] == (byte) 0xEF && fileData[1] == (byte) 0xBB && fileData[2] == (byte) 0xBF
+                && fileData[3] == 'Y' && fileData[4] == 'S' && fileData[5] == 'G' && fileData[6] == 'P') {
+            return 3;
+        }
+        if (fileData[0] == 'Y' && fileData[1] == 'S' && fileData[2] == 'G' && fileData[3] == 'P') {
+            int cryptoVersion = ByteBuffer.wrap(fileData, 4, 4).order(ByteOrder.BIG_ENDIAN).getInt();
+            if (cryptoVersion == VERSION || cryptoVersion == VERSION_II) {
+                return cryptoVersion;
+            }
+        }
+        return -1;
+    }
 
     public static Map<String, byte[]> input(byte[] data) throws IOException {
         if (data.length < 24) return Collections.emptyMap();

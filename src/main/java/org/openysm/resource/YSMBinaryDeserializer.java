@@ -6,6 +6,7 @@ import io.netty.buffer.Unpooled;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -238,15 +239,16 @@ public class YSMBinaryDeserializer implements AutoCloseable{
             }
         }
 
+        List<RawYsmModel.RawImage> tempAvatars = new ArrayList<>();
         int extraTextureCount = reader.readVarInt();
         for (int i = 0; i < extraTextureCount; ++i) {
-            RawYsmModel.RawTexture tex = new RawYsmModel.RawTexture();
-            tex.name = reader.readString();
-            tex.data = reader.readByteArray();
-            tex.width = reader.readVarInt();
-            tex.height = reader.readVarInt();
-            tex.imageFormat = -1; // RGBA
-            model.mainEntity.textures.put(tex.name, tex); // 作為額外紋理存入主實體
+            RawYsmModel.RawImage avatar = new RawYsmModel.RawImage();
+            avatar.name = reader.readString();
+            avatar.data = reader.readByteArray();
+            avatar.width = reader.readVarInt();
+            avatar.height = reader.readVarInt();
+            avatar.format = -1; // RGBA
+            tempAvatars.add(avatar);
         }
 
         // Tables回填Hash
@@ -304,6 +306,16 @@ public class YSMBinaryDeserializer implements AutoCloseable{
         }
 
         parseYSMJson();
+        for (int i = 0; i < tempAvatars.size(); ++i) {
+            RawYsmModel.RawImage avatar = tempAvatars.get(i);
+            if (i < model.metadata.authors.size()) {
+                model.metadata.authors.get(i).avatar = avatar.name;
+                model.metadata.authors.get(i).avatarImage = avatar;
+            } else {
+                model.metadata.extraAvatars.add(avatar);
+            }
+        }
+        reclassifyAuthorTextures();
     }
 
     private void deserializeModern() {
@@ -360,6 +372,7 @@ public class YSMBinaryDeserializer implements AutoCloseable{
         assignMainModels(tempMainModels);
 
         parseYSMJson();
+        reclassifyAuthorTextures();
     }
 
     private void parseSubEntity(Map<String, RawYsmModel.RawSubEntity> targetMap, String categoryName, int index) {
@@ -525,6 +538,10 @@ public class YSMBinaryDeserializer implements AutoCloseable{
             }
         }
 
+        if (isNewVersionYsm == 0 && format <= 15) {
+            return;
+        }
+
         model.properties.widthScale = reader.readFloat();
         model.properties.heightScale = reader.readFloat();
 
@@ -626,6 +643,52 @@ public class YSMBinaryDeserializer implements AutoCloseable{
             bg.unknownFlag = reader.readVarInt();
             model.properties.backgroundImages.add(bg);
         }
+    }
+
+    private void reclassifyAuthorTextures() {
+        if (model.metadata.authors.isEmpty() || model.mainEntity.textures.size() <= 1) {
+            return;
+        }
+
+        Iterator<Map.Entry<String, RawYsmModel.RawTexture>> iterator = model.mainEntity.textures.entrySet().iterator();
+        while (iterator.hasNext() && model.mainEntity.textures.size() > 1) {
+            Map.Entry<String, RawYsmModel.RawTexture> entry = iterator.next();
+            RawYsmModel.RawMetadata.Author author = findAuthorForTexture(entry.getKey());
+            if (author == null || author.avatarImage != null) {
+                continue;
+            }
+
+            RawYsmModel.RawTexture texture = entry.getValue();
+            RawYsmModel.RawImage image = new RawYsmModel.RawImage();
+            image.name = texture.name;
+            image.data = texture.data;
+            image.width = texture.width;
+            image.height = texture.height;
+            image.format = texture.imageFormat;
+            image.unknownFlag = texture.unknownFlag;
+            image.isPng = texture.imageFormat == 2;
+
+            author.avatar = texture.name;
+            author.avatarImage = image;
+            iterator.remove();
+        }
+    }
+
+    private RawYsmModel.RawMetadata.Author findAuthorForTexture(String textureName) {
+        String normalizedTextureName = normalizeAuthorTextureName(textureName);
+        for (RawYsmModel.RawMetadata.Author author : model.metadata.authors) {
+            if (textureName.equals(author.name) || normalizedTextureName.equals(normalizeAuthorTextureName(author.name))) {
+                return author;
+            }
+        }
+        return null;
+    }
+
+    private static String normalizeAuthorTextureName(String name) {
+        if (name == null || name.isEmpty()) {
+            return "";
+        }
+        return name.replaceAll("§.", "").trim();
     }
 
     private void parseLegacyYSMInfo() {

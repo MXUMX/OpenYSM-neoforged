@@ -8,6 +8,7 @@
 package rip.ysm.gui.molang;
 
 import org.openysm.OpenYSM;
+import org.openysm.capability.PlayerCapability;
 import org.openysm.config.ServerConfig;
 import org.openysm.geckolib3.core.AnimatableEntity;
 import org.openysm.geckolib3.resource.GeckoLibCache;
@@ -81,7 +82,11 @@ public final class MolangOption {
     private static void execute(AnimatableEntity<?> animatable, String expr) {
         try {
             animatable.executeExpression(GeckoLibCache.parseSimpleExpression(expr), true, false, null);
-            if (!GeckoLibCache.isRoamingVariableAssignment(expr) && NetworkHandler.isClientConnected() && !((Boolean)ServerConfig.LOW_BANDWIDTH_USAGE.get()).booleanValue()) {
+            if (GeckoLibCache.isRoamingVariableAssignment(expr)) {
+                if (animatable instanceof PlayerCapability cap) {
+                    cap.syncRoamingAssignments(expr);
+                }
+            } else if (NetworkHandler.isClientConnected() && !((Boolean)ServerConfig.LOW_BANDWIDTH_USAGE.get()).booleanValue()) {
                 NetworkHandler.sendToServer(new C2SRequestExecuteMolangPacket(expr, animatable.getEntity().getId()));
             }
         }
@@ -90,4 +95,3 @@ public final class MolangOption {
         }
     }
 }
-

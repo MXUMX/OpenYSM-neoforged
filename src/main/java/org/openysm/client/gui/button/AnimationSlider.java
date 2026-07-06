@@ -1,6 +1,7 @@
 package org.openysm.client.gui.button;
 
 import org.openysm.OpenYSM;
+import org.openysm.capability.PlayerCapability;
 import org.openysm.client.gui.ISpecialWidget;
 import org.openysm.config.ServerConfig;
 import org.openysm.geckolib3.core.AnimatableEntity;
@@ -37,7 +38,11 @@ public class AnimationSlider extends ForgeSlider implements ISpecialWidget {
         try {
             String str = this.controllerName + "=" + getValue();
             this.model.executeExpression(GeckoLibCache.parseSimpleExpression(str), true, false, null);
-            if (!GeckoLibCache.isRoamingVariableAssignment(str) && NetworkHandler.isClientConnected() && !ServerConfig.LOW_BANDWIDTH_USAGE.get().booleanValue()) {
+            if (GeckoLibCache.isRoamingVariableAssignment(str)) {
+                if (this.model instanceof PlayerCapability cap) {
+                    cap.syncRoamingAssignments(str);
+                }
+            } else if (NetworkHandler.isClientConnected() && !ServerConfig.LOW_BANDWIDTH_USAGE.get().booleanValue()) {
                 NetworkHandler.sendToServer(new C2SRequestExecuteMolangPacket(str, this.model.getEntity().getId()));
             }
         } catch (ParseException e) {

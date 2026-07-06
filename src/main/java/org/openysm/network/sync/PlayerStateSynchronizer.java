@@ -155,7 +155,7 @@ public class PlayerStateSynchronizer {
     }
 
     public void syncMolangVars(ServerPlayer serverPlayer, boolean sendNow, int hashId, Object2FloatMap<String> variables) {
-        if (!this.dirty && sendNow) {
+        if (sendNow) {
             getOrCreateSyncMessage(serverPlayer, true).setMolangVars(hashId, variables);
             trySendSync(serverPlayer);
         }

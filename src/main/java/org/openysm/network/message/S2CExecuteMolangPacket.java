@@ -61,6 +61,9 @@ public class S2CExecuteMolangPacket {
             if (entity instanceof Player) {
                 org.openysm.capability.YSMCapabilities.get(entity, PlayerCapabilityProvider.PLAYER_CAP).ifPresent(cap -> {
                     try {
+                        if (GeckoLibCache.isRoamingVariableAssignment(message.expression) && !cap.isLocalPlayerModel()) {
+                            cap.applyRoamingAssignments(message.expression);
+                        }
                         cap.executeExpression(GeckoLibCache.parseSimpleExpression(message.expression), true, false, null);
                     } catch (ParseException e) {
                         OpenYSM.LOGGER.error("Failed to execute molang " + message.expression, e);

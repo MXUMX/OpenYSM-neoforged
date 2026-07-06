@@ -17,6 +17,7 @@ import org.openysm.molang.runtime.Int2FloatOpenHashMapStruct;
 import org.openysm.molang.runtime.Struct;
 import org.openysm.network.NetworkHandler;
 import org.openysm.network.message.C2SCompleteFeedbackPacket;
+import org.openysm.network.message.C2SRequestExecuteMolangPacket;
 import org.openysm.network.message.FeedbackData;
 import org.openysm.forge.capability.PlayerCapabilityProvider;
 import org.openysm.forge.capability.VehicleCapabilityProvider;
@@ -158,6 +159,162 @@ public final class PlayerCapability extends CustomPlayerEntity {
         return this.molangVarsMap.containsKey(i);
     }
 
+    public boolean syncRoamingAssignments(String expression) {
+        if (!isLocalPlayerModel() || !NetworkHandler.isClientConnected()) {
+            return false;
+        }
+        boolean applied = applyRoamingAssignments(expression);
+        if (applied) {
+            NetworkHandler.sendToServer(new C2SRequestExecuteMolangPacket(expression, this.entity.getId()));
+        }
+        return applied;
+    }
+
+    public boolean applyRoamingAssignments(String expression) {
+        if (this.currentModelHashId == 0) {
+            return false;
+        }
+        String[] assignments = expression.split(";");
+        String[] names = new String[assignments.length];
+        float[] values = new float[assignments.length];
+        int count = 0;
+        for (String assignment : assignments) {
+            ParsedRoamingAssignment parsed = parseRoamingAssignment(assignment);
+            if (parsed == null) {
+                continue;
+            }
+            ensureRoamingContainer();
+            if (this.serverVarContainer != null) {
+                this.serverVarContainer.putProperty(StringPool.computeIfAbsent(parsed.name), parsed.value);
+            }
+            names[count] = parsed.name;
+            values[count] = parsed.value;
+            count++;
+        }
+        if (count == 0) {
+            return false;
+        }
+        if (isLocalPlayerModel() && NetworkHandler.isClientConnected()) {
+            names = compactNames(names, count);
+            values = compactValues(values, count);
+            NetworkHandler.sendToServer(new C2SCompleteFeedbackPacket(new FeedbackData(this.currentModelHashId, new Object2FloatArrayMap(names, values), null, this.entity.getId())));
+        }
+        return true;
+    }
+
+    private void ensureRoamingContainer() {
+        if (isLocalPlayerModel()) {
+            if (this.serverVarContainer instanceof RoamingStruct) {
+                return;
+            }
+            MolangVarHolder varHolder = this.molangVarsMap.computeIfAbsent(this.currentModelHashId, i -> new MolangVarHolder());
+            if (varHolder.currentVars == null) {
+                varHolder.currentVars = new Int2FloatOpenHashMap(4);
+                varHolder.applyPendingDeltas();
+            }
+            this.serverVarContainer = new RoamingStruct(this.currentModelHashId, varHolder.currentVars);
+            return;
+        }
+        if (this.serverVarContainer instanceof Int2FloatOpenHashMapStruct) {
+            return;
+        }
+        MolangVarHolder varHolder = this.molangVarsMap.computeIfAbsent(this.currentModelHashId, i -> new MolangVarHolder());
+        if (varHolder.currentVars == null) {
+            varHolder.currentVars = new Int2FloatOpenHashMap(4);
+            varHolder.applyPendingDeltas();
+        }
+        this.serverVarContainer = new Int2FloatOpenHashMapStruct(varHolder.currentVars);
+    }
+
+    private String[] compactNames(String[] names, int count) {
+        if (count != names.length) {
+            String[] compactNames = new String[count];
+            System.arraycopy(names, 0, compactNames, 0, count);
+            return compactNames;
+        }
+        return names;
+    }
+
+    private float[] compactValues(float[] values, int count) {
+        if (count != values.length) {
+            float[] compactValues = new float[count];
+            System.arraycopy(values, 0, compactValues, 0, count);
+            return compactValues;
+        }
+        return values;
+    }
+
+    @Nullable
+    private ParsedRoamingAssignment parseRoamingAssignment(String assignment) {
+        int equalsIndex = assignment.indexOf('=');
+        if (equalsIndex <= 0) {
+            return null;
+        }
+        String left = assignment.substring(0, equalsIndex).trim();
+        String right = assignment.substring(equalsIndex + 1).trim();
+        String name = parseRoamingName(left);
+        if (name == null || name.length() > RoamingStruct.MAX_VAR_NAME_LENGTH || right.isEmpty()) {
+            return null;
+        }
+        Float value = evaluateRoamingValue(right);
+        return value != null ? new ParsedRoamingAssignment(name, value.floatValue()) : null;
+    }
+
+    @Nullable
+    private static String parseRoamingName(String expression) {
+        String lower = expression.toLowerCase();
+        String prefix = lower.startsWith("v.roaming.") ? "v.roaming." : lower.startsWith("variable.roaming.") ? "variable.roaming." : null;
+        if (prefix == null || expression.length() == prefix.length()) {
+            return null;
+        }
+        String name = expression.substring(prefix.length());
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (!Character.isLetterOrDigit(c) && c != '_') {
+                return null;
+            }
+        }
+        return name;
+    }
+
+    @Nullable
+    private Float evaluateRoamingValue(String expression) {
+        String value = expression.trim();
+        if (value.endsWith(";")) {
+            value = value.substring(0, value.length() - 1).trim();
+        }
+        if (value.isEmpty()) {
+            return null;
+        }
+        if ("true".equalsIgnoreCase(value)) {
+            return 1.0f;
+        }
+        if ("false".equalsIgnoreCase(value)) {
+            return 0.0f;
+        }
+        try {
+            return Float.parseFloat(value);
+        } catch (NumberFormatException ignored) {
+        }
+        if (value.startsWith("!")) {
+            Float inner = evaluateRoamingValue(value.substring(1));
+            return inner != null ? (inner.floatValue() == 0.0f ? 1.0f : 0.0f) : null;
+        }
+        String compact = value.replace(" ", "");
+        if (compact.startsWith("1-")) {
+            Float inner = evaluateRoamingValue(compact.substring(2));
+            return inner != null ? 1.0f - inner.floatValue() : null;
+        }
+        String roamingName = parseRoamingName(value);
+        if (roamingName != null && this.serverVarContainer != null) {
+            Object property = this.serverVarContainer.getProperty(StringPool.computeIfAbsent(roamingName));
+            if (property instanceof Number number) {
+                return number.floatValue();
+            }
+        }
+        return null;
+    }
+
     private void applyMolangDelta(int i, Int2FloatMap int2FloatMap) {
         if (i == this.currentModelHashId && this.entity.getVehicle() != null && this.entity.getVehicle().getFirstPassenger() == this.entity) {
             org.openysm.capability.YSMCapabilities.get(this.entity.getVehicle(), VehicleCapabilityProvider.VEHICLE_CAP).ifPresent(cap -> {
@@ -237,5 +394,8 @@ public final class PlayerCapability extends CustomPlayerEntity {
                 this.currentVars.putAll(this.pendingDeltas.dequeue());
             }
         }
+    }
+
+    private record ParsedRoamingAssignment(String name, float value) {
     }
 }

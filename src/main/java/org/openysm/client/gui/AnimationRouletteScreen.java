@@ -3,6 +3,7 @@ package org.openysm.client.gui;
 import org.openysm.client.event.AnimationLockEvent;
 import org.openysm.client.gui.custom.ExtraAnimationButtons;
 import org.openysm.OpenYSM;
+import org.openysm.capability.PlayerCapability;
 import org.openysm.forge.capability.PlayerCapabilityProvider;
 import org.openysm.resource.models.ModelProperties;
 import org.openysm.client.gui.button.AnimationSlider;
@@ -294,7 +295,9 @@ public class AnimationRouletteScreen extends Screen {
             int iRound2 = Math.round(110.0f / iMax2);
             ConfigCheckBox configCheckBox = new ConfigCheckBox(this.centerX + 127 + (iRound2 * (idx % iMax2)), this.centerY + rowY, iRound2, mutableComponentLiteral2, bool -> {
                 executeExpression(str4, null);
-                if (!GeckoLibCache.isRoamingVariableAssignment(str4) && NetworkHandler.isClientConnected() && !ServerConfig.LOW_BANDWIDTH_USAGE.get().booleanValue()) {
+                if (GeckoLibCache.isRoamingVariableAssignment(str4)) {
+                    syncRoamingAssignments(str4);
+                } else if (NetworkHandler.isClientConnected() && !ServerConfig.LOW_BANDWIDTH_USAGE.get().booleanValue()) {
                     NetworkHandler.sendToServer(new C2SRequestExecuteMolangPacket(str4, this.animatableModel.getEntity().getId()));
                 }
                 init();
@@ -332,7 +335,9 @@ public class AnimationRouletteScreen extends Screen {
         ConfigCheckBox configCheckBox = new ConfigCheckBox(this.centerX + 125, this.centerY + iArr[0], mutableComponentLiteral, bool -> {
             String str2 = checkboxConfig.getValue() + "=" + (bool.booleanValue() ? "1" : "0");
             executeExpression(str2, null);
-            if (!GeckoLibCache.isRoamingVariableAssignment(str2) && NetworkHandler.isClientConnected() && !ServerConfig.LOW_BANDWIDTH_USAGE.get().booleanValue()) {
+            if (GeckoLibCache.isRoamingVariableAssignment(str2)) {
+                syncRoamingAssignments(str2);
+            } else if (NetworkHandler.isClientConnected() && !ServerConfig.LOW_BANDWIDTH_USAGE.get().booleanValue()) {
                 NetworkHandler.sendToServer(new C2SRequestExecuteMolangPacket(str2, this.animatableModel.getEntity().getId()));
             }
         }) {
@@ -345,6 +350,12 @@ public class AnimationRouletteScreen extends Screen {
         configCheckBox.setStateTriggered(parsedValue > 0.0f);
         configCheckBox.setTooltip(tooltipCreate);
         return configCheckBox;
+    }
+
+    private void syncRoamingAssignments(String expression) {
+        if (this.animatableModel instanceof PlayerCapability cap) {
+            cap.syncRoamingAssignments(expression);
+        }
     }
 
     private float parseFloatValue(String str) throws NumberFormatException {
