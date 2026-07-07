@@ -21,11 +21,27 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
-      - name: Generate commit list
-        id: commits
+      - name: Generate changelog
+        id: changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          COMMITS=$(git log -n 20 --pretty=format:"- %h %s")
+          LATEST_TAG=$(gh api "/repos/$GITHUB_REPOSITORY/releases/latest" --jq ".tag_name" 2>/dev/null || true)
+
+          if [ -n "$LATEST_TAG" ] && git rev-parse --verify --quiet "refs/tags/$LATEST_TAG" >/dev/null; then
+            COMMITS=$(git log "$LATEST_TAG..HEAD" --pretty=format:"- %h %s")
+          else
+            COMMITS=$(git log --pretty=format:"- %h %s")
+          fi
+
+          if [ -z "$COMMITS" ]; then
+            COMMITS="No code changes since the last release."
+          fi
+
           echo "commits<<EOF" >> "$GITHUB_OUTPUT"
           echo "$COMMITS" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
@@ -51,10 +67,7 @@ jobs:
           lfs: true
 
       - name: Restore compile-only libraries
-        run: |
-          ls -lh priv-storage/openysm-ci-libs.zip
-          file priv-storage/openysm-ci-libs.zip
-          unzip -o priv-storage/openysm-ci-libs.zip
+        run: unzip -q -o priv-storage/openysm-ci-libs.zip
 
       - name: Validate compile-only libraries
         run: |
@@ -118,6 +131,6 @@ jobs:
           target_commitish: ${{ github.sha }}
           body: |
             ## Changes
-            ${{ steps.commits.outputs.commits }}
+            ${{ steps.changelog.outputs.commits }}
           draft: false
           prerelease: false
