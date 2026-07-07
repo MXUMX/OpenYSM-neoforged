@@ -48,9 +48,13 @@ jobs:
           repository: ${{ secrets.CI_LIBS_REPOSITORY }}
           token: ${{ secrets.PRIV_REPO_PAT }}
           path: priv-storage
+          lfs: true
 
       - name: Restore compile-only libraries
-        run: unzip -o priv-storage/openysm-ci-libs.zip
+        run: |
+          ls -lh priv-storage/openysm-ci-libs.zip
+          file priv-storage/openysm-ci-libs.zip
+          unzip -o priv-storage/openysm-ci-libs.zip
 
       - name: Validate compile-only libraries
         run: |
