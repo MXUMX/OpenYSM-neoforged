@@ -1,0 +1,74 @@
+name: Build Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual release"
+        required: false
+        default: "Manual trigger"
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate commit list
+        id: commits
+        run: |
+          COMMITS=$(git log -n 20 --pretty=format:"- %h %s")
+          echo "commits<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$COMMITS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: gradle
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Extract mod metadata
+        id: metadata
+        run: |
+          MOD_NAME=$(grep "^mod_name=" gradle.properties | cut -d'=' -f2-)
+          MOD_VERSION=$(grep "^mod_version=" gradle.properties | cut -d'=' -f2-)
+          MINECRAFT_VERSION=$(grep "^minecraft_version=" gradle.properties | cut -d'=' -f2-)
+
+          echo "mod_name=$MOD_NAME" >> "$GITHUB_OUTPUT"
+          echo "mod_version=$MOD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "minecraft_version=$MINECRAFT_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build with Gradle
+        run: ./gradlew build --no-daemon
+
+      - name: Prepare release artifacts
+        run: |
+          mkdir -p release
+          find build/libs -name "*.jar" ! -name "*sources.jar" ! -name "*javadoc.jar" -exec cp {} release/ \;
+          test -n "$(find release -name '*.jar' -print -quit)"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.jar
+          tag_name: ${{ steps.metadata.outputs.mod_version }}-${{ github.run_id }}
+          name: ${{ steps.metadata.outputs.mod_name }} ${{ steps.metadata.outputs.mod_version }} for Minecraft ${{ steps.metadata.outputs.minecraft_version }}
+          target_commitish: ${{ github.sha }}
+          body: |
+            ## Changes
+            ${{ steps.commits.outputs.commits }}
+          draft: false
+          prerelease: false
