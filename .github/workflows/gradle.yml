@@ -29,22 +29,7 @@ jobs:
         id: changelog
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          LATEST_TAG=$(gh api "/repos/$GITHUB_REPOSITORY/releases/latest" --jq ".tag_name" 2>/dev/null || true)
-
-          if [ -n "$LATEST_TAG" ] && git rev-parse --verify --quiet "refs/tags/$LATEST_TAG" >/dev/null; then
-            COMMITS=$(git log "$LATEST_TAG..HEAD" --pretty=format:"- %h %s")
-          else
-            COMMITS=$(git log --pretty=format:"- %h %s")
-          fi
-
-          if [ -z "$COMMITS" ]; then
-            COMMITS="No code changes since the last release."
-          fi
-
-          echo "commits<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$COMMITS" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+        run: bash .github/scripts/generate-changelog.sh
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -67,90 +52,21 @@ jobs:
           lfs: true
 
       - name: Restore compile-only libraries
-        run: |
-          unzip -q -o priv-storage/openysm-ci-libs.zip
-
-          if [ ! -d "src/main/resources/assets/openysm/builtin" ]; then
-            BUILTIN_DIR=$(find . -path "*/src/main/resources/assets/openysm/builtin" -type d -print -quit)
-
-            if [ -n "$BUILTIN_DIR" ]; then
-              mkdir -p src/main/resources/assets/openysm
-              cp -R "$BUILTIN_DIR" src/main/resources/assets/openysm/
-            fi
-          fi
+        run: bash .github/scripts/restore-ci-inputs.sh
 
       - name: Validate compile-only libraries
-        run: |
-          missing=0
-
-          required_files=(
-            "src/main/resources/META-INF/jars/ImageStream--SNAPSHOT.jar"
-            "src/main/resources/META-INF/jars/architectury-forge-9.2.14.jar"
-            "src/main/resources/META-INF/jars/mixinextras-forge-0.3.6.jar"
-            "work/reference/neoforge-1.21.1/carryon-neoforge-1.21.1-2.2.4.4.jar"
-            "work/reference/neoforge-1.21.1/immersive_melodies-neoforge-0.6.4+1.21.1.jar"
-            "work/reference/neoforge-1.21.1/ParCool-1.21.1-3.4.3.3-NF.jar"
-            "work/reference/neoforge-1.21.1/accessories-neoforge-1.1.0-beta.53+1.21.1.jar"
-            "work/reference/neoforge-1.21.1/simplehats-neoforge-1.21.1-0.4.0.jar"
-          )
-
-          for file in "${required_files[@]}"; do
-            if [ ! -f "$file" ]; then
-              echo "::error::Missing compile-only jar: $file"
-              missing=1
-            fi
-          done
-
-          if ! find work/reference/OpenYSM/libs -name "*.jar" -print -quit >/dev/null 2>&1; then
-            echo "::error::Missing compile-only jars in work/reference/OpenYSM/libs"
-            missing=1
-          fi
-
-          if ! find src/main/resources/assets/openysm/builtin -type f -print -quit >/dev/null 2>&1; then
-            echo "::error::Missing bundled OpenYSM resources in src/main/resources/assets/openysm/builtin"
-            missing=1
-          fi
-
-          if [ "$missing" -ne 0 ]; then
-            echo "These jars are ignored locally and are not available on GitHub's runner."
-            echo "Commit the required local build inputs, or provide priv-storage/openysm-ci-libs.zip via CI_LIBS_REPOSITORY and PRIV_REPO_PAT."
-            exit 1
-          fi
+        run: bash .github/scripts/validate-ci-inputs.sh
 
       - name: Extract mod metadata
         id: metadata
-        run: |
-          MOD_NAME=$(grep "^mod_name=" gradle.properties | cut -d'=' -f2-)
-          MOD_VERSION=$(grep "^mod_version=" gradle.properties | cut -d'=' -f2-)
-          MINECRAFT_VERSION=$(grep "^minecraft_version=" gradle.properties | cut -d'=' -f2-)
-
-          echo "mod_name=$MOD_NAME" >> "$GITHUB_OUTPUT"
-          echo "mod_version=$MOD_VERSION" >> "$GITHUB_OUTPUT"
-          echo "minecraft_version=$MINECRAFT_VERSION" >> "$GITHUB_OUTPUT"
+        run: bash .github/scripts/extract-metadata.sh
 
       - name: Determine release suffix
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
           MOD_VERSION: ${{ steps.metadata.outputs.mod_version }}
-        run: |
-          EXISTING_COUNT=$(gh api --paginate "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq ".[] | select(.tag_name | startswith(\"${MOD_VERSION}-\")) | .tag_name" \
-            | wc -l | tr -d ' ')
-
-          if [ "$EXISTING_COUNT" -gt 0 ]; then
-            SUFFIX="r$((EXISTING_COUNT + 1))"
-            JAR_VERSION="${MOD_VERSION/-/-${SUFFIX}-}"
-            echo "suffix=$SUFFIX" >> "$GITHUB_OUTPUT"
-            echo "tag_name=${MOD_VERSION}-${SUFFIX}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
-            echo "display_version=${MOD_VERSION} ${SUFFIX}" >> "$GITHUB_OUTPUT"
-            echo "jar_version=$JAR_VERSION" >> "$GITHUB_OUTPUT"
-          else
-            echo "suffix=" >> "$GITHUB_OUTPUT"
-            echo "tag_name=${MOD_VERSION}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
-            echo "display_version=${MOD_VERSION}" >> "$GITHUB_OUTPUT"
-            echo "jar_version=${MOD_VERSION}" >> "$GITHUB_OUTPUT"
-          fi
+        run: bash .github/scripts/determine-release-suffix.sh
 
       - name: Build with Gradle
         run: gradle build --no-daemon
@@ -159,18 +75,7 @@ jobs:
         env:
           MOD_VERSION: ${{ steps.metadata.outputs.mod_version }}
           JAR_VERSION: ${{ steps.release.outputs.jar_version }}
-        run: |
-          mkdir -p release
-          for file in build/libs/*.jar; do
-            case "$file" in
-              *-sources.jar|*-javadoc.jar) continue ;;
-            esac
-
-            base=$(basename "$file" .jar)
-            release_base="${base/$MOD_VERSION/$JAR_VERSION}"
-            cp "$file" "release/${release_base}.jar"
-          done
-          test -n "$(find release -name '*.jar' -print -quit)"
+        run: bash .github/scripts/prepare-release-artifacts.sh
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
