@@ -117,9 +117,10 @@ public class NativeModelRenderer {
         Vector3f tempNorm = new Vector3f();
         Matrix4f[] boneLocalTransforms = new Matrix4f[mesh.bakedBones.size()];
         boolean[] boneVisible = new boolean[mesh.bakedBones.size()];
+        boolean[] boneHidesChildren = new boolean[mesh.bakedBones.size()];
 
         for (int i = 0; i < mesh.bakedBones.size(); i++) {
-            calculateBoneMatrix(i, mesh.bakedBones, boneParams, boneLocalTransforms, boneVisible, identityMat, stateBuffer);
+            calculateBoneMatrix(i, mesh.bakedBones, boneParams, boneLocalTransforms, boneVisible, boneHidesChildren, identityMat, stateBuffer);
         }
 
         for (int i = 0; i < mesh.bakedBones.size(); i++) {
@@ -167,18 +168,19 @@ public class NativeModelRenderer {
         }
     }
 
-    private static Matrix4f calculateBoneMatrix(int idx, java.util.List<GeoModel.BakedBone> bones, float[] boneParams, Matrix4f[] cache, boolean[] visibleCache, Matrix4f rootPose, float[] stateBuffer) {
+    private static Matrix4f calculateBoneMatrix(int idx, java.util.List<GeoModel.BakedBone> bones, float[] boneParams, Matrix4f[] cache, boolean[] visibleCache, boolean[] hidesChildrenCache, Matrix4f rootPose, float[] stateBuffer) {
         if (cache[idx] != null) return cache[idx];
 
         GeoModel.BakedBone bone = bones.get(idx);
         Matrix4f parentMatrix = rootPose;
         boolean isVisible = true;
+        boolean inheritedHidden = false;
 
         if (bone.parentIdx != -1) {
-            parentMatrix = calculateBoneMatrix(bone.parentIdx, bones, boneParams, cache, visibleCache, rootPose, stateBuffer);
-            // 如果父骨骼不可見，子骨骼必然跟著不可見
-            if (!visibleCache[bone.parentIdx]) {
+            parentMatrix = calculateBoneMatrix(bone.parentIdx, bones, boneParams, cache, visibleCache, hidesChildrenCache, rootPose, stateBuffer);
+            if (hidesChildrenCache[bone.parentIdx]) {
                 isVisible = false;
+                inheritedHidden = true;
             }
         }
 
@@ -195,15 +197,12 @@ public class NativeModelRenderer {
         float animSy = boneParams[pOffset + 7];
         float animSz = boneParams[pOffset + 8];
 
-        float unk1 = boneParams[pOffset + 9];
-        float unk2 = boneParams[pOffset + 10];
+        boolean selfHidden = boneParams[pOffset + 9] == 1.0f;
+        boolean hideChildren = boneParams[pOffset + 10] == 1.0f;
         float unk3 = boneParams[pOffset + 11];
 
-        if (unk1 != 0.0F && unk2 != 0.0F && unk3 != 0.0F) {
-            //"".hashCode();
-        }
-
-        if (animSx == 0.0f && animSy == 0.0f && animSz == 0.0f) {
+        boolean scaleHidden = animSx == 0.0f && animSy == 0.0f && animSz == 0.0f;
+        if (selfHidden || scaleHidden) {
             isVisible = false;
         }
 
@@ -237,6 +236,7 @@ public class NativeModelRenderer {
 
         cache[idx] = localMat;
         visibleCache[idx] = isVisible; // 保存當前骨骼的可見性
+        hidesChildrenCache[idx] = inheritedHidden || scaleHidden || (selfHidden && hideChildren);
         return localMat;
     }
 

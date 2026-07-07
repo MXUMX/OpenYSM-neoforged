@@ -14,10 +14,10 @@ public final class Characters {
     }
 
     public static boolean isValidForWordStart(final int c) {
-        return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c == '_';
+        return Character.isUnicodeIdentifierStart(c) || c == '_';
     }
 
     public static boolean isValidForWordContinuation(final int c) {
-        return isValidForWordStart(c) || isDigit(c);
+        return Character.isUnicodeIdentifierPart(c) || c == '_';
     }
 }

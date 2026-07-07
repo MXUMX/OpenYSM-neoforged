@@ -64,6 +64,7 @@ public final class PlayerCapability extends CustomPlayerEntity {
         return (PlayerEntityFrameState) super.getPositionTracker();
     }
 
+    @Override
     @Nullable
     public Struct getServerVarContainer() {
         return this.serverVarContainer;
@@ -84,17 +85,18 @@ public final class PlayerCapability extends CustomPlayerEntity {
     @Override
     public void setCurrentModel(AnimatedGeoModel model) {
         super.setCurrentModel(model);
-        MolangVarHolder varHolder = this.molangVarsMap.get(this.currentModelHashId);
-        if (varHolder != null && varHolder.currentVars != null) {
-            if (isLocalPlayerModel()) {
-                this.serverVarContainer = new RoamingStruct(this.currentModelHashId, varHolder.currentVars);
-                return;
-            } else {
-                this.serverVarContainer = new Int2FloatOpenHashMapStruct(varHolder.currentVars);
-                return;
-            }
+        if (this.currentModelHashId == 0) {
+            this.serverVarContainer = null;
+            return;
         }
-        this.serverVarContainer = null;
+        MolangVarHolder varHolder = this.molangVarsMap.computeIfAbsent(this.currentModelHashId, i -> new MolangVarHolder());
+        if (varHolder.currentVars == null) {
+            varHolder.currentVars = new Int2FloatOpenHashMap(4);
+        }
+        varHolder.applyPendingDeltas();
+        this.serverVarContainer = isLocalPlayerModel()
+                ? new RoamingStruct(this.currentModelHashId, varHolder.currentVars)
+                : new Int2FloatOpenHashMapStruct(varHolder.currentVars);
     }
 
     @Override

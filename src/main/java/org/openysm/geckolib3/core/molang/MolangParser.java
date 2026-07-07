@@ -40,9 +40,73 @@ public class MolangParser {
     }
 
     public IValue parseExpressionUnsafe(String molangExpression, boolean isScript) throws ParseException {
-        MolangValue value = new MolangValue(this.engine.parse(isScript ? stripComments(molangExpression) : molangExpression), isScript);
+        MolangValue value = new MolangValue(this.engine.parse(preprocessExpression(molangExpression, isScript)), isScript);
         this.primaryBinding.dispose();
         return value;
+    }
+
+    private static String preprocessExpression(String input, boolean isScript) {
+        String expression = stripComments(input);
+        return stripLegacyLabelStatements(expression);
+    }
+
+    private static String stripLegacyLabelStatements(String input) {
+        String normalized = input.replace("\r\n", "\n").replace('\r', '\n');
+        String[] lines = normalized.split("\n", -1);
+        StringBuilder builder = new StringBuilder(input.length());
+        boolean changed = false;
+        for (String line : lines) {
+            if (isLegacyLabelStatement(line.trim())) {
+                changed = true;
+                continue;
+            }
+            if (!builder.isEmpty()) {
+                builder.append('\n');
+            }
+            builder.append(line);
+        }
+        return changed ? builder.toString() : input;
+    }
+
+    private static boolean isLegacyLabelStatement(String line) {
+        if (line.isEmpty()) {
+            return false;
+        }
+        if ("];".equals(line)) {
+            return true;
+        }
+        if (line.length() > 1 && line.startsWith("'") && line.endsWith("'") && containsNonAscii(line)) {
+            return true;
+        }
+        if ((line.startsWith("['") || line.startsWith("'")) && line.endsWith(";") && containsNonAscii(line)) {
+            return true;
+        }
+        if (!line.endsWith(";") || !containsNonAscii(line)) {
+            return false;
+        }
+        String statement = line.substring(0, line.length() - 1).trim();
+        if (statement.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < statement.length(); i++) {
+            int c = statement.codePointAt(i);
+            if (!Character.isUnicodeIdentifierPart(c) && c != '_') {
+                return false;
+            }
+            if (Character.charCount(c) == 2) {
+                i++;
+            }
+        }
+        return true;
+    }
+
+    private static boolean containsNonAscii(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            if (value.charAt(i) > 0x7f) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String stripComments(String input) {

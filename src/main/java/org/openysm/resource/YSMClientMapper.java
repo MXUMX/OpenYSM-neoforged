@@ -474,7 +474,8 @@ public class YSMClientMapper {
 
                 states.add(new AnimationState(rs.name, animations.toArray(new Pair[0]), transitions.toArray(new Pair[0]), rs.soundEffects.toArray(new String[0]), onEntry.toArray(new IValue[0]), onExit.toArray(new IValue[0]), blendTransition, rs.blendViaShortestPath));
             }
-            result.put(rac.animationName, new AnimationController("default", states.toArray(new AnimationState[0])));
+            String initialState = rac.initialState == null || rac.initialState.isBlank() ? "default" : rac.initialState;
+            result.put(rac.animationName, new AnimationController(initialState, states.toArray(new AnimationState[0])));
         }
         return result;
     }
