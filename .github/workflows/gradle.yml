@@ -11,6 +11,10 @@ on:
         required: false
         default: "Manual trigger"
 
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-release:
     runs-on: ubuntu-latest
