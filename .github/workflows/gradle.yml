@@ -67,7 +67,17 @@ jobs:
           lfs: true
 
       - name: Restore compile-only libraries
-        run: unzip -q -o priv-storage/openysm-ci-libs.zip
+        run: |
+          unzip -q -o priv-storage/openysm-ci-libs.zip
+
+          if [ ! -d "src/main/resources/assets/openysm/builtin" ]; then
+            BUILTIN_DIR=$(find . -path "*/src/main/resources/assets/openysm/builtin" -type d -print -quit)
+
+            if [ -n "$BUILTIN_DIR" ]; then
+              mkdir -p src/main/resources/assets/openysm
+              cp -R "$BUILTIN_DIR" src/main/resources/assets/openysm/
+            fi
+          fi
 
       - name: Validate compile-only libraries
         run: |
