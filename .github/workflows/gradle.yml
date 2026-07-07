@@ -96,9 +96,14 @@ jobs:
             missing=1
           fi
 
+          if ! find src/main/resources/assets/openysm/builtin -type f -print -quit >/dev/null 2>&1; then
+            echo "::error::Missing bundled OpenYSM resources in src/main/resources/assets/openysm/builtin"
+            missing=1
+          fi
+
           if [ "$missing" -ne 0 ]; then
             echo "These jars are ignored locally and are not available on GitHub's runner."
-            echo "Commit the required compile-only jars, or provide priv-storage/openysm-ci-libs.zip via CI_LIBS_REPOSITORY and PRIV_REPO_PAT."
+            echo "Commit the required local build inputs, or provide priv-storage/openysm-ci-libs.zip via CI_LIBS_REPOSITORY and PRIV_REPO_PAT."
             exit 1
           fi
 
@@ -113,21 +118,56 @@ jobs:
           echo "mod_version=$MOD_VERSION" >> "$GITHUB_OUTPUT"
           echo "minecraft_version=$MINECRAFT_VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Determine release suffix
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MOD_VERSION: ${{ steps.metadata.outputs.mod_version }}
+        run: |
+          EXISTING_COUNT=$(gh api --paginate "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name | startswith(\"${MOD_VERSION}-\")) | .tag_name" \
+            | wc -l | tr -d ' ')
+
+          if [ "$EXISTING_COUNT" -gt 0 ]; then
+            SUFFIX="r$((EXISTING_COUNT + 1))"
+            JAR_VERSION="${MOD_VERSION/-/-${SUFFIX}-}"
+            echo "suffix=$SUFFIX" >> "$GITHUB_OUTPUT"
+            echo "tag_name=${MOD_VERSION}-${SUFFIX}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+            echo "display_version=${MOD_VERSION} ${SUFFIX}" >> "$GITHUB_OUTPUT"
+            echo "jar_version=$JAR_VERSION" >> "$GITHUB_OUTPUT"
+          else
+            echo "suffix=" >> "$GITHUB_OUTPUT"
+            echo "tag_name=${MOD_VERSION}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+            echo "display_version=${MOD_VERSION}" >> "$GITHUB_OUTPUT"
+            echo "jar_version=${MOD_VERSION}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build with Gradle
         run: gradle build --no-daemon
 
       - name: Prepare release artifacts
+        env:
+          MOD_VERSION: ${{ steps.metadata.outputs.mod_version }}
+          JAR_VERSION: ${{ steps.release.outputs.jar_version }}
         run: |
           mkdir -p release
-          find build/libs -name "*.jar" ! -name "*sources.jar" ! -name "*javadoc.jar" -exec cp {} release/ \;
+          for file in build/libs/*.jar; do
+            case "$file" in
+              *-sources.jar|*-javadoc.jar) continue ;;
+            esac
+
+            base=$(basename "$file" .jar)
+            release_base="${base/$MOD_VERSION/$JAR_VERSION}"
+            cp "$file" "release/${release_base}.jar"
+          done
           test -n "$(find release -name '*.jar' -print -quit)"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: release/*.jar
-          tag_name: ${{ steps.metadata.outputs.mod_version }}-${{ github.run_id }}
-          name: ${{ steps.metadata.outputs.mod_name }} ${{ steps.metadata.outputs.mod_version }} for Minecraft ${{ steps.metadata.outputs.minecraft_version }}
+          tag_name: ${{ steps.release.outputs.tag_name }}
+          name: ${{ steps.metadata.outputs.mod_name }} ${{ steps.release.outputs.display_version }} for Minecraft ${{ steps.metadata.outputs.minecraft_version }}
           target_commitish: ${{ github.sha }}
           body: |
             ## Changes
