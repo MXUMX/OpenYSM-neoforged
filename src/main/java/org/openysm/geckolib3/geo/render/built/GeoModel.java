@@ -11,6 +11,7 @@ import it.unimi.dsi.fastutil.objects.ObjectLists;
 import org.jetbrains.annotations.NotNull;
 import org.joml.Vector2f;
 import org.joml.Vector3f;
+import rip.ysm.gpu.GpuRenderPath;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -112,32 +113,62 @@ public class GeoModel {
     }
 
     public long nativeModelHandle = 0;
-    public final ByteBuffer vertexOutBuffer = /*ByteBuffer.allocateDirect(900000 * 14 * 4).order(ByteOrder.nativeOrder())*/null; //FIXME
 
-    public static native long nInitModelCache(ByteBuffer buffer);
+    public static long nInitModelCache(ByteBuffer buffer) {
+        return com.elfmcys.yesstevemodel.geckolib3.geo.render.built.GeoModel.nInitModelCache(buffer);
+    }
 
-    public static native void nDestroyModelCache(long handle);
+    public static void nDestroyModelCache(long handle) {
+        com.elfmcys.yesstevemodel.geckolib3.geo.render.built.GeoModel.nDestroyModelCache(handle);
+    }
 
-    public static native int nComputeModelVertices(long handle, ByteBuffer outBuffer, ByteBuffer matrixBuffer, ByteBuffer animBuffer, int renderPartMask, int packedLight, int packedOverlay, float r, float g, float b, float a, boolean sb);
+    public static void nComputeModelVertices(long handle, Object vertexConsumer, float[] matrixBuffer, float[] animBuffer, int renderPartMask, int packedLight, int packedOverlay, float r, float g, float b, float a) {
+        com.elfmcys.yesstevemodel.geckolib3.geo.render.built.GeoModel.nComputeModelVertices(handle, vertexConsumer, matrixBuffer, animBuffer, renderPartMask, packedLight, packedOverlay, r, g, b, a);
+    }
 
-    public static native long nBuildGpuMesh(ByteBuffer modelBuffer, int[] metadata);
+    public static long nBuildGpuMesh(ByteBuffer modelBuffer, int[] metadata) {
+        return com.elfmcys.yesstevemodel.geckolib3.geo.render.built.GeoModel.nBuildGpuMesh(modelBuffer, metadata);
+    }
 
-    public static native ByteBuffer nGetGpuMeshVertexBuffer(long handle);
+    public static ByteBuffer nGetGpuMeshVertexBuffer(long handle) {
+        return com.elfmcys.yesstevemodel.geckolib3.geo.render.built.GeoModel.nGetGpuMeshVertexBuffer(handle);
+    }
 
-    public static native ByteBuffer nGetGpuMeshIndexBuffer(long handle);
+    public static ByteBuffer nGetGpuMeshIndexBuffer(long handle) {
+        return com.elfmcys.yesstevemodel.geckolib3.geo.render.built.GeoModel.nGetGpuMeshIndexBuffer(handle);
+    }
 
-    public static native void nReleaseGpuMeshScratch(long handle);
+    public static void nReleaseGpuMeshScratch(long handle) {
+        com.elfmcys.yesstevemodel.geckolib3.geo.render.built.GeoModel.nReleaseGpuMeshScratch(handle);
+    }
 
-    public static native void nFreeGpuMesh(long handle);
+    public static void nFreeGpuMesh(long handle) {
+        com.elfmcys.yesstevemodel.geckolib3.geo.render.built.GeoModel.nFreeGpuMesh(handle);
+    }
 
-    public static native void nComputeBoneMatrices(long meshHandle, float[] rootPose, float[] rootNormal, float[] boneParams, int packedLight, ByteBuffer outBuffer);
+    public static void nComputeBoneMatrices(long meshHandle, float[] rootPose, float[] rootNormal, float[] boneParams, int packedLight, ByteBuffer outBuffer) {
+        com.elfmcys.yesstevemodel.geckolib3.geo.render.built.GeoModel.nComputeBoneMatrices(meshHandle, rootPose, rootNormal, boneParams, packedLight, outBuffer);
+    }
 
-    public static native void nComputeBoneMatricesLocal(long meshHandle, float[] boneParams, int packedLight, ByteBuffer outBuffer);
+    public static void nComputeBoneMatricesLocal(long meshHandle, float[] boneParams, int packedLight, ByteBuffer outBuffer) {
+        com.elfmcys.yesstevemodel.geckolib3.geo.render.built.GeoModel.nComputeBoneMatricesLocal(meshHandle, boneParams, packedLight, outBuffer);
+    }
 
     public void buildNativeCache() {
         if (bakedBones == null || bakedBones.isEmpty()) return;
 
-        ByteBuffer buffer = ByteBuffer.allocateDirect(1024 * 1024 * 20).order(ByteOrder.nativeOrder());
+        int totalBones = bakedBones.size();
+        int totalCubes = 0;
+        int totalQuads = 0;
+        for (BakedBone bone : bakedBones) {
+            totalCubes += bone.cubes.size();
+            for (BakedCube cube : bone.cubes) {
+                totalQuads += cube.quads.size();
+            }
+        }
+
+        int initBufferSize = 4 + totalBones * 25 + totalCubes * 5 + totalQuads * 92;
+        ByteBuffer buffer = ByteBuffer.allocateDirect(initBufferSize).order(ByteOrder.nativeOrder());
 
         buffer.putInt(bakedBones.size());
         for (BakedBone bone : bakedBones) {
@@ -150,7 +181,9 @@ public class GeoModel {
 
             buffer.putInt(bone.cubes.size());
             for (BakedCube cube : bone.cubes) {
-                buffer.put((byte) (cube.cullable ? 1 : 0));
+                // The bundled 1.20.1 native renderer's face-culling test is not reliable
+                // under the 1.21.1 render matrices, so keep SIMD conservative.
+                buffer.put((byte) 0);
                 buffer.putInt(cube.quads.size());
                 for (BakedQuad quad : cube.quads) {
                     for (int v = 0; v < 4; v++) { // 12 floats
@@ -171,13 +204,16 @@ public class GeoModel {
         }
 
         buffer.position(0);
-//        this.nativeModelHandle = nInitModelCache(buffer);
+        this.nativeModelHandle = nInitModelCache(buffer);
     }
 
     public void freeNativeCache() {
         if (nativeModelHandle != 0) {
             nDestroyModelCache(nativeModelHandle);
             nativeModelHandle = 0;
+        }
+        if (gpuMeshHandle != 0) {
+            GpuRenderPath.disposeMesh(this);
         }
     }
 

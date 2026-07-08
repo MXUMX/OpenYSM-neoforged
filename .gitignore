@@ -23,12 +23,8 @@ libs/
 *.jar
 *.zip
 
-# Embedded binary artifacts are local build inputs, not source.
-src/main/resources/META-INF/jars/
-src/main/resources/natives/
-
-# Bundled model/content packs are kept local unless separately licensed.
-src/main/resources/assets/openysm/builtin/
+# Embedded runtime inputs live under src/main/resources and are part of
+# producing a complete OpenYSM jar.
 
 # Compiled/native binaries
 *.class
@@ -41,3 +37,13 @@ src/main/resources/assets/openysm/builtin/
 *.log
 *.log.gz
 crash-reports/
+
+!src/main/resources/META-INF/jars/
+!src/main/resources/META-INF/jars/*.jar
+!src/main/resources/natives/
+!src/main/resources/natives/**/
+!src/main/resources/natives/**/*.dll
+!src/main/resources/natives/**/*.dylib
+!src/main/resources/natives/**/*.so
+!src/main/resources/assets/openysm/builtin/
+!src/main/resources/assets/openysm/builtin/**

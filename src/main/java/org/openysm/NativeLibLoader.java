@@ -45,7 +45,7 @@ public final class NativeLibLoader {
         }
 
         String getResourcePath() {
-            return "/META-INF/native/" + resDir + "/" + fileName;
+            return "/natives/" + resDir + "/" + fileName;
         }
     }
 

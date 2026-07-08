@@ -2,27 +2,36 @@ package rip.ysm.algorithms;
 
 import org.openysm.NativeLibLoader;
 import com.ysm.parser.YSMNative;
-import org.apache.commons.io.FileUtils;
 import rip.ysm.zstd.ZstdUtil;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 public class YsmZstd {
+    private static volatile boolean nativeYsmZstdAvailable = true;
+
     public static byte[] decompress(byte[] rawData) throws IOException {
-        if(NativeLibLoader.isLoaded())
-            return YSMNative.ysmZstdDecompress(rawData);
+        if(NativeLibLoader.isLoaded() && nativeYsmZstdAvailable) {
+            try {
+                return YSMNative.ysmZstdDecompress(rawData);
+            } catch (UnsatisfiedLinkError e) {
+                nativeYsmZstdAvailable = false;
+            }
+        }
 
         byte[] data = YsmZstd.wash(rawData);
-        //FileUtils.writeByteArrayToFile(new File("test.bin"),data);
         return ZstdUtil.decompress(data);
     }
 
     public static byte[] compress(byte[] rawData) {
-        if(NativeLibLoader.isLoaded())
-            return YSMNative.ysmZstdCompress(rawData,3);
+        if(NativeLibLoader.isLoaded() && nativeYsmZstdAvailable) {
+            try {
+                return YSMNative.ysmZstdCompress(rawData,3);
+            } catch (UnsatisfiedLinkError e) {
+                nativeYsmZstdAvailable = false;
+            }
+        }
         byte[] zstdData = ZstdUtil.compress(rawData,3);
         return YsmZstd.obfuscate(zstdData);
     }
