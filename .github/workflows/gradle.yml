@@ -47,7 +47,7 @@ jobs:
         with:
           gradle-version: 8.14.4
 
-      - name: Checkout private compile-only libraries
+      - name: Checkout private compile-only references
         uses: actions/checkout@v4
         with:
           repository: ${{ secrets.CI_LIBS_REPOSITORY }}
@@ -55,10 +55,10 @@ jobs:
           path: priv-storage
           lfs: true
 
-      - name: Restore compile-only libraries
+      - name: Restore private compile-only references
         run: bash .github/scripts/restore-ci-inputs.sh
 
-      - name: Validate compile-only libraries
+      - name: Validate build inputs
         run: bash .github/scripts/validate-ci-inputs.sh
 
       - name: Extract mod metadata

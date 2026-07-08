@@ -1,83 +1,63 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-target_dir="src/main/resources/assets/openysm/builtin"
+archive="priv-storage/openysm-ci-libs.zip"
 
-has_builtin_files() {
-  find "$target_dir" -type f -print -quit >/dev/null 2>&1
+if [ ! -f "$archive" ]; then
+  echo "::error::Missing private compile-only archive: $archive"
+  exit 1
+fi
+
+tmp_dir=$(mktemp -d)
+cleanup() {
+  rm -rf "$tmp_dir"
+}
+trap cleanup EXIT
+
+unzip -q -o "$archive" -d "$tmp_dir"
+
+copy_file() {
+  local rel_path="$1"
+  local file_name
+  local source_path
+
+  file_name=$(basename "$rel_path")
+
+  if [ -f "$tmp_dir/$rel_path" ]; then
+    source_path="$tmp_dir/$rel_path"
+  else
+    source_path=$(find "$tmp_dir" -type f -name "$file_name" -print -quit)
+  fi
+
+  if [ -n "${source_path:-}" ]; then
+    mkdir -p "$(dirname "$rel_path")"
+    cp "$source_path" "$rel_path"
+  fi
 }
 
-copy_builtin_dir() {
-  local source_dir="$1"
+copy_openysm_libs() {
+  local source_dir=""
 
-  rm -rf "$target_dir"
-  mkdir -p "$(dirname "$target_dir")"
-  cp -R "$source_dir" "$target_dir"
-}
-
-copy_builtin_contents() {
-  local source_dir="$1"
-
-  rm -rf "$target_dir"
-  mkdir -p "$target_dir"
-
-  for item in "$source_dir"/misc "$source_dir"/default "$source_dir"/wine_fox; do
-    [ -e "$item" ] || continue
-    cp -R "$item" "$target_dir/"
+  for candidate in \
+    "$tmp_dir/work/reference/OpenYSM/libs" \
+    "$tmp_dir/reference/OpenYSM/libs" \
+    "$tmp_dir/OpenYSM/libs"
+  do
+    if find "$candidate" -name "*.jar" -print -quit >/dev/null 2>&1; then
+      source_dir="$candidate"
+      break
+    fi
   done
+
+  if [ -n "$source_dir" ]; then
+    mkdir -p work/reference/OpenYSM/libs
+    cp "$source_dir"/*.jar work/reference/OpenYSM/libs/
+  fi
 }
 
-unzip -q -o priv-storage/openysm-ci-libs.zip
-
-if has_builtin_files; then
-  exit 0
-fi
-
-builtin_dir=""
-
-for candidate in \
-  "src/main/resources/assets/openysm/builtin" \
-  "assets/openysm/builtin" \
-  "openysm/builtin" \
-  "builtin"
-do
-  if find "$candidate" -type f -print -quit >/dev/null 2>&1; then
-    builtin_dir="$candidate"
-    break
-  fi
-done
-
-if [ -z "$builtin_dir" ]; then
-  builtin_file=$(find . -path "*/assets/openysm/builtin/*" -type f -print -quit)
-
-  if [ -n "$builtin_file" ]; then
-    builtin_dir="${builtin_file%%/assets/openysm/builtin/*}/assets/openysm/builtin"
-  fi
-fi
-
-if [ -n "$builtin_dir" ] && [ "$builtin_dir" != "$target_dir" ]; then
-  copy_builtin_dir "$builtin_dir"
-fi
-
-if has_builtin_files; then
-  exit 0
-fi
-
-for content_root in "." "priv-storage"; do
-  if [ -f "$content_root/misc/ysm-pack.json" ] || [ -f "$content_root/default/ysm.json" ] || [ -f "$content_root/wine_fox/ysm-pack.json" ]; then
-    copy_builtin_contents "$content_root"
-    break
-  fi
-done
-
-if has_builtin_files; then
-  exit 0
-fi
-
-archive_entries=$(zipinfo -1 priv-storage/openysm-ci-libs.zip 2>/dev/null | wc -l | tr -d ' ')
-builtin_like_entries=$(zipinfo -1 priv-storage/openysm-ci-libs.zip 2>/dev/null | grep -E -c '(^|/)(builtin|assets/openysm)(/|$)' || true)
-archive_sha256=$(sha256sum priv-storage/openysm-ci-libs.zip | cut -d' ' -f1)
-
-echo "::error::Bundled OpenYSM resources were not restored from priv-storage/openysm-ci-libs.zip."
-echo "Archive entries: $archive_entries; builtin-like entries: $builtin_like_entries; sha256: $archive_sha256"
-exit 1
+copy_file "work/reference/neoforge-1.21.1/carryon-neoforge-1.21.1-2.2.4.4.jar"
+copy_file "work/reference/neoforge-1.21.1/immersive_melodies-neoforge-0.6.4+1.21.1.jar"
+copy_file "work/reference/neoforge-1.21.1/ParCool-1.21.1-3.4.3.3-NF.jar"
+copy_file "work/reference/neoforge-1.21.1/accessories-neoforge-1.1.0-beta.53+1.21.1.jar"
+copy_file "work/reference/neoforge-1.21.1/simplehats-neoforge-1.21.1-0.4.0.jar"
+copy_openysm_libs
