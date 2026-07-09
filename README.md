@@ -1,3 +1,5 @@
+[![Modrinth Downloads](https://img.shields.io/modrinth/dt/KYoi3sJ6?logo=modrinth&style=for-the-badge)](https://modrinth.com/mod/openysm-unofficial-neoforge-port) [![CurseForge Downloads](https://img.shields.io/curseforge/dt/1587175?logo=curseforge&style=for-the-badge)](https://www.curseforge.com/minecraft/mc-mods/openysm-unofficial-neoforge-port)
+
 A more compatible version of Yes Steve Model
 
 [https://github.com/OpenYSM/OpenYSM](https://github.com/OpenYSM/OpenYSM)
