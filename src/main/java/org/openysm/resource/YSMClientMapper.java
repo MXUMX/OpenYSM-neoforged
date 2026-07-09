@@ -224,7 +224,9 @@ public class YSMClientMapper {
 
         for (RawYsmModel.RawBone rb : rawGeo.bones) {
             parentMap.put(rb.name, rb.parentName);
-            geoBones.add(new GeoBone(rb.name, false, false, false, rb.pivot[0], rb.pivot[1], rb.pivot[2], rb.rotation[0], rb.rotation[1], rb.rotation[2]));
+            GeoBone geoBone = new GeoBone(rb.name, false, false, false, rb.pivot[0], rb.pivot[1], rb.pivot[2], rb.rotation[0], rb.rotation[1], rb.rotation[2]);
+            geoBone.parentName = rb.parentName;
+            geoBones.add(geoBone);
 
             GeoModel.BakedBone bb = new GeoModel.BakedBone();
             bb.name = rb.name;

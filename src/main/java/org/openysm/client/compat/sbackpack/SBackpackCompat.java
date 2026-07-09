@@ -20,7 +20,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Optional;
 
 public class SBackpackCompat {
-    private static final ArtifactVersion MIN_VERSION = new DefaultArtifactVersion("3.24.25");
+    private static final ArtifactVersion MIN_VERSION = new DefaultArtifactVersion("3.25.30");
     private static final String MOD_ID = "sophisticatedbackpacks";
 
     private static boolean IS_LOADED;
@@ -29,7 +29,10 @@ public class SBackpackCompat {
 
     public static void init() {
         ModFileInfo modFileById;
-        if (!GeneralConfig.SOPHISTICATEDBACKPACK.get() && (modFileById = LoadingModList.get().getModFileById(MOD_ID)) != null) {
+        if (!GeneralConfig.SOPHISTICATEDBACKPACK.get()) {
+            return;
+        }
+        if ((modFileById = LoadingModList.get().getModFileById(MOD_ID)) != null) {
             if (modFileById.getMods().get(0).getVersion().compareTo(MIN_VERSION) >= 0) {
                 IS_LOADED = true;
             } else {

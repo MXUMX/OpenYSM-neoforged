@@ -18,6 +18,8 @@ import org.openysm.client.compat.sbackpack.SBackpackCompat;
 import org.openysm.client.entity.CustomPlayerEntity;
 import org.openysm.geckolib3.geo.GeoLayerRenderer;
 import org.openysm.geckolib3.geo.animated.AnimatedGeoModel;
+import org.openysm.geckolib3.core.processor.IBone;
+import org.openysm.geckolib3.geo.render.built.GeoBone;
 import org.openysm.geckolib3.util.RenderUtils;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -29,8 +31,13 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.p3pp3rf1y.sophisticatedbackpacks.client.render.BackpackLayerRenderer;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class SophisticatedBackpackLayer
 extends GeoLayerRenderer<CustomPlayerEntity> {
+    private static final String[] BACKPACK_FALLBACK_BONES = {"UpperBody", "UpBody", "Body", "AllBody"};
+
     private final EntityModel<Player> backpackModel = SophisticatedBackpackLayer.createBackpackModel();
 
     private static EntityModel<Player> createBackpackModel() {
@@ -49,9 +56,10 @@ extends GeoLayerRenderer<CustomPlayerEntity> {
         Player player;
         ItemStack stack;
         AnimatedGeoModel model = entityLivingBaseIn.getCurrentModel();
-        if (model != null && !model.backpackBones().isEmpty() && (stack = SBackpackCompat.getBackpackItem((LivingEntity)(player = (Player)entityLivingBaseIn.getEntity()))) != null) {
+        List<IBone> backpackBones = this.getBackpackBones(model);
+        if (!backpackBones.isEmpty() && (stack = SBackpackCompat.getBackpackItem((LivingEntity)(player = (Player)entityLivingBaseIn.getEntity()))) != null) {
             poseStack.pushPose();
-            this.renderBackpack(poseStack, model);
+            this.renderBackpack(poseStack, backpackBones);
             poseStack.mulPose(Axis.XP.rotationDegrees(180.0f));
             poseStack.mulPose(Axis.YP.rotationDegrees(180.0f));
             poseStack.translate(0.0, -0.1, 0.0);
@@ -60,7 +68,54 @@ extends GeoLayerRenderer<CustomPlayerEntity> {
         }
     }
 
-    public void renderBackpack(PoseStack poseStack, AnimatedGeoModel model) {
-        RenderUtils.prepMatrixForLocator(poseStack, model.backpackBones());
+    private List<IBone> getBackpackBones(AnimatedGeoModel model) {
+        if (model == null) {
+            return List.of();
+        }
+        List<IBone> backpackBones = model.backpackBones();
+        if (!backpackBones.isEmpty()) {
+            return backpackBones;
+        }
+        if (!model.elytraBones().isEmpty()) {
+            return model.elytraBones();
+        }
+        for (String fallbackBone : BACKPACK_FALLBACK_BONES) {
+            List<IBone> fallbackBones = this.buildBoneChain(model, fallbackBone);
+            if (!fallbackBones.isEmpty()) {
+                return fallbackBones;
+            }
+        }
+        return List.of();
+    }
+
+    private List<IBone> buildBoneChain(AnimatedGeoModel model, String targetBoneName) {
+        ArrayList<IBone> chain = new ArrayList<>();
+        String boneName = targetBoneName;
+        while (boneName != null && !boneName.isEmpty()) {
+            GeoBone geoBone = this.findGeoBone(model, boneName);
+            if (geoBone == null) {
+                return List.of();
+            }
+            IBone bone = model.bones().get(geoBone.getBoneId());
+            if (bone == null) {
+                return List.of();
+            }
+            chain.add(0, bone);
+            boneName = geoBone.parentName;
+        }
+        return chain;
+    }
+
+    private GeoBone findGeoBone(AnimatedGeoModel model, String boneName) {
+        for (GeoBone geoBone : model.getGeoModel().topLevelBones()) {
+            if (geoBone.getName().equals(boneName)) {
+                return geoBone;
+            }
+        }
+        return null;
+    }
+
+    public void renderBackpack(PoseStack poseStack, List<IBone> backpackBones) {
+        RenderUtils.prepMatrixForLocator(poseStack, backpackBones);
     }
 }
