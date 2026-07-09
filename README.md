@@ -30,10 +30,10 @@ The original mod is [https://modrinth.com/mod/openysm](https://modrinth.com/mod/
 *   **_Simple Planes_** [https://modrinth.com/mod/simple-planes](https://modrinth.com/mod/simple-planes)
 *   **_Iris shaders_** [https://www.curseforge.com/minecraft/mc-mods/irisshaders](https://www.curseforge.com/minecraft/mc-mods/irisshaders)
 *   **_SimpleHats_** [https://modrinth.com/mod/simple-hats](https://modrinth.com/mod/simple-hats)
+*   **_Sophisticated Backpacks_** [https://modrinth.com/mod/sophisticated-backpacks](https://modrinth.com/mod/sophisticated-backpacks)
 
 ## Work in progress compatibility features with:
 
-*   **_Sophisticated Backpacks_** [https://modrinth.com/mod/sophisticated-backpacks](https://modrinth.com/mod/sophisticated-backpacks)
 *   **_Superb Warfare_** [https://modrinth.com/mod/superb-warfare](https://modrinth.com/mod/superb-warfare)
 *   **_Star Worm Equestrian Mod_** [https://www.curseforge.com/minecraft/mc-mods/swem](https://www.curseforge.com/minecraft/mc-mods/swem)
 *   **_Real Camera_** [https://modrinth.com/mod/real-camera](https://modrinth.com/mod/real-camera)
