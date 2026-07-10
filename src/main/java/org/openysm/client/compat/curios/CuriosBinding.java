@@ -14,7 +14,6 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
-import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.type.capability.ICuriosItemHandler;
 import top.theillusivec4.curios.api.type.inventory.ICurioStacksHandler;
 import top.theillusivec4.curios.api.type.inventory.IDynamicStackHandler;
@@ -68,7 +67,7 @@ public class CuriosBinding {
         if (!context.isDebugMode()) {
             return null;
         }
-        CuriosApi.getCuriosInventory(context.entity()).ifPresent(handler -> {
+        CuriosCompat.getCuriosInventory(context.entity()).ifPresent(handler -> {
             for (Map.Entry<String, ICurioStacksHandler> entry : handler.getCurios().entrySet()) {
                 context.logWarningComponent(Component.literal("-------- Type ").append(ComponentUtils.copyOnClickText(entry.getKey())).append(" --------"));
                 context.logWarning(StringPool.EMPTY);
