@@ -31,13 +31,13 @@ The original mod is [https://modrinth.com/mod/openysm](https://modrinth.com/mod/
 *   **_Iris shaders_** [https://www.curseforge.com/minecraft/mc-mods/irisshaders](https://www.curseforge.com/minecraft/mc-mods/irisshaders)
 *   **_SimpleHats_** [https://modrinth.com/mod/simple-hats](https://modrinth.com/mod/simple-hats)
 *   **_Sophisticated Backpacks_** [https://modrinth.com/mod/sophisticated-backpacks](https://modrinth.com/mod/sophisticated-backpacks)
+*   **_FirstPerson_** [https://modrinth.com/mod/first-person-model](https://modrinth.com/mod/first-person-model)
 
 ## Work in progress compatibility features with:
 
 *   **_Superb Warfare_** [https://modrinth.com/mod/superb-warfare](https://modrinth.com/mod/superb-warfare)
 *   **_Star Worm Equestrian Mod_** [https://www.curseforge.com/minecraft/mc-mods/swem](https://www.curseforge.com/minecraft/mc-mods/swem)
 *   **_Real Camera_** [https://modrinth.com/mod/real-camera](https://modrinth.com/mod/real-camera)
-*   **_FirstPerson_** [https://modrinth.com/mod/first-person-model](https://modrinth.com/mod/first-person-model)
 *   **_Player Animation Library_** [https://modrinth.com/mod/player-animation-library](https://modrinth.com/mod/player-animation-library)
 *   **_Customizable Player Models_** [https://www.curseforge.com/minecraft/mc-mods/custom-player-models](https://www.curseforge.com/minecraft/mc-mods/custom-player-models)
 
